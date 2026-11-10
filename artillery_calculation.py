@@ -29,7 +29,8 @@ else:
 # Configuración de pantalla
 # ---------------------------------------------------------------------------
 
-WIDTH, HEIGHT, FPS = 1280, 720, 60
+WIDTH, HEIGHT = 1280, 720
+FPS = 30 if sys.platform == "emscripten" else 60
 TITLE = "Artillery Calculation"
 
 SAVE_DIR = Path(__file__).resolve().parent / "save_prof"
@@ -65,10 +66,10 @@ TIME_MAX = 600.0
 TIME_PENALTY_BASE, TIME_PENALTY_STEP, TIME_PENALTY_MAX = 10.0, 5.0, 60.0
 BALLOON_MIN_FAILS, BALLOON_LIFE = 3, 30.0
 BALLOON_TIME_BONUS, FREEZE_SECONDS = 45.0, 20.0
-BALLOON_R = 26              # radio (px) igual para TODOS los globos
-PENALIZE_NEAR_MISS = True   # True: «¡CASI!» también descuenta tiempo; False: solo el fallo total («lejos»)
-TIME_FLASH_SECONDS = 2.4    # cuánto dura el aviso «-10 s» sobre la tarjeta de la misión
-SHOT_CLICK_SPEED = 4.0      # multiplicador de velocidad del proyectil al hacer clic durante el vuelo
+BALLOON_R = 26
+PENALIZE_NEAR_MISS = True
+TIME_FLASH_SECONDS = 2.4
+SHOT_CLICK_SPEED = 4.0
 FIRE_COOLDOWN_SECONDS = 3.0
 
 FIELD = pygame.Rect(16, 76, 836, 628)
@@ -249,8 +250,6 @@ def path_is_clear(X, c, plateau, dist, side=1):
             return False
     return True
 
-# Contextos (misiones) para que el problema no se sienta siempre igual.
-# (título de misión, texto corto, nombre del blanco). {lado} se reemplaza por la dirección.
 SCENARIOS = {
     "plano": [
         ("DRON ENEMIGO", "Un dron aterrizó en el llano, {lado}. Derríbalo con un solo disparo.", "DRON"),
@@ -535,7 +534,6 @@ def judge(shot, error_deg):
         return "diana" if error_deg <= DIANA_TOL else "acierto"
     return "cerca" if shot.best <= NEAR_MISS_R else "lejos"
 
-# Consejos tácticos que aparecen (con probabilidad baja) tras varios fallos.
 TIPS_GENERAL = (
     "Haz cambios grandes al inicio (de 5° en 5°) y afina después con décimas.",
     "Mira dónde cayó la bala y corrige solo la mitad de lo que te equivocaste.",
@@ -1628,7 +1626,7 @@ class Game:
             self.fails += 1
             res["tip"] = self.maybe_tip(res)
             if (cat == "lejos" or PENALIZE_NEAR_MISS) and not self.balloons_popped_this_shot:
-                self.time_penalty()   # acertar NUNCA descuenta tiempo
+                self.time_penalty()
             self.maybe_spawn_balloons()
         color = CAT_COLOR[cat]
         if hit:
@@ -1665,7 +1663,7 @@ class Game:
         if random.random() >= min(0.8, 0.5 + 0.1 * (self.fails - BALLOON_MIN_FAILS)):
             return
         p = self.problem
-        z, x0 = camera_goal(p)          # vista en reposo: así quedan visibles mientras se apunta
+        z, x0 = camera_goal(p)
         tsx, tsy = (p.side * p.dist - x0) * z, GROUND_Y_REF - p.height * z
         gsx = -x0 * z
         placed = []
@@ -1675,11 +1673,11 @@ class Game:
                 wx, wy = sx / z + x0, (GROUND_Y_REF - sy) / z
                 ground_sy = GROUND_Y_REF - terrain_height(wx, p.plateau, p.dist, p.side) * z
                 if sy > ground_sy - BALLOON_R - 40:
-                    continue                                    # dentro o pegado al terreno
+                    continue
                 if math.hypot(sx - tsx, sy - tsy) < 80 or (abs(sx - tsx) < 45 and sy > tsy):
-                    continue                                    # tapa el blanco o su poste
+                    continue
                 if math.hypot(sx - gsx, sy - GROUND_Y_REF) < 100:
-                    continue                                    # pegado al cañón
+                    continue
                 if any(math.hypot(sx - qx, sy - qy) < 2 * BALLOON_R + 24 for qx, qy in placed):
                     continue
                 placed.append((sx, sy))
@@ -1703,7 +1701,7 @@ class Game:
         self.balloon_idx = len(path)
         if not self.balloons or len(pts) < 2:
             return
-        reach = BALLOON_R / self.camera.zoom + BULLET_R      # radio del globo en metros + radio de la bala
+        reach = BALLOON_R / self.camera.zoom + BULLET_R
         for b in list(self.balloons):
             c = (b["wx"], b["wy"])
             if any(seg_point_dist(u, v, c) <= reach for u, v in zip(pts, pts[1:])):
@@ -1729,7 +1727,6 @@ class Game:
             self.time_left, text = min(TIME_MAX, self.time_left + BALLOON_TIME_BONUS), f"+{BALLOON_TIME_BONUS:.0f} s"
         wx, wy, z = b["wx"], b["wy"], self.camera.zoom
         self.pops.append({"x": wx, "y": wy, "text": text, "color": color, "age": 0.0, "life": 1.5})
-        # Animación de explosión: cáscara que se rompe + onda + fragmentos y chispas
         self.pop_fx.append({"x": wx, "y": wy, "color": color, "age": 0.0, "life": 0.5})
         self.rings.append([wx, wy, 0.0, 0.55, color, 62])
         self.rings.append([wx, wy, 0.0, 0.32, (255, 255, 255), 36])
@@ -2064,7 +2061,7 @@ class Game:
         card = ui.rounded((w, h), 14, (46, 8, 18, 248), (*C_BAD, 235), 2).copy()
         card.blit(head, head.get_rect(midtop=(w // 2, 8)))
         card.blit(amount, amount.get_rect(midtop=(w // 2, 8 + head.get_height() + 2)))
-        if age < 0.25:                                           # entrada con pequeño rebote
+        if age < 0.25:
             sc = 0.7 + 0.3 * ease_out_back(age / 0.25)
             card = pygame.transform.smoothscale(card, (max(1, int(w * sc)), max(1, int(h * sc))))
         card.set_alpha(int(255 * k))
@@ -2209,7 +2206,7 @@ class Game:
             x, y = self.view(b["wx"], b["wy"])
             if not -60 < x < FW + 60 or not -60 < y < FH + 60:
                 continue
-            y += 3.0 * math.sin(t * 2.2 + b["ph"])            # balanceo solo visual
+            y += 3.0 * math.sin(t * 2.2 + b["ph"])
             r = BALLOON_R * ease_out_back(clamp(b["age"] / 0.4, 0.0, 1.0))
             color = b["color"]
             pygame.draw.lines(surf, (150, 160, 210), False,
@@ -2227,17 +2224,17 @@ class Game:
                 ui.text(surf, f"+{BALLOON_TIME_BONUS:.0f}", "small_b", C_DARK, (x, y), "center")
             else:
                 ui.text(surf, "?", "h1", C_DARK, (x, y), "center")
-        for fx in self.pop_fx:                                  # explosión del globo
+        for fx in self.pop_fx:
             k = fx["age"] / fx["life"]
             e = ease_out_cubic(k)
             x, y = self.view(fx["x"], fx["y"])
             color, dark = fx["color"], (18, 20, 50)
             add_glow(surf, (x, y), 8 * max(3, int((26 + 40 * e) / 8)), fade_color(color, 0.8 * (1.0 - k)))
-            if k < 0.28:                                        # cáscara que se infla, se blanquea y revienta
+            if k < 0.28:
                 aa_circle(surf, mix(color, (255, 255, 255), k / 0.28), (x, y), BALLOON_R * (1.0 + 0.55 * k / 0.28))
             pygame.draw.circle(surf, mix(color, dark, k), (int(x), int(y)),
                                int(BALLOON_R * (0.8 + 1.5 * e)), max(1, int(5 * (1.0 - k))))
-            for i in range(10):                                 # jirones de goma que salen disparados
+            for i in range(10):
                 a = i * math.tau / 10 + fx["x"] * 0.37
                 d, sz = BALLOON_R * (0.4 + 2.0 * e), BALLOON_R * 0.40 * (1.0 - k)
                 cx, cy = x + math.cos(a) * d, y + math.sin(a) * d
@@ -2352,8 +2349,6 @@ class Game:
         ui.text(s, f"Semilla X_{{0}} = {seed} · respuesta: X que ya no cambia", "tiny", C_MUTED,
                 (r.x + 18, r.y + 127))
 
-        # Tabla de iteraciones: SIEMPRE visible. Cada pista descubre nuevas celdas (las nuevas
-        # se resaltan un momento); las ocultas muestran puntos. La respuesta cae en una de las 3 filas.
         top = r.y + 148
         box = pygame.Rect(r.x + 12, top - 4, r.w - 24, r.bottom - top - 2)
         s.blit(ui.rounded(box.size, 10, (10, 14, 34, 255), (70, 86, 160), 1), box.topleft)

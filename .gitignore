@@ -1,3 +1,7 @@
-app/build/
+/build/
+/web_build/
+/.vercel/
+/.vercel-venv/
+/.venv/
 __pycache__/
-.vercel/
+*.py[cod]
