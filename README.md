@@ -156,8 +156,6 @@ Si fallas **3 veces o más**, pueden aparecer **globos** en el campo. **Atravié
 
 > 📱 Funciona en **escritorio y móvil**: el lienzo se escala automáticamente a cualquier pantalla.
 
-En móviles, el juego recomienda usar el teléfono en horizontal. Pulsa **Girar pantalla automáticamente** para que el navegador solicite el giro y pantalla completa; si el navegador o el dispositivo no lo permiten, gíralo manualmente. La versión web limita el juego a 30 FPS para reducir el consumo de batería y carga del dispositivo.
-
 ---
 
 ## 🏅 Clasificación
@@ -172,28 +170,24 @@ Al terminar puedes guardar tu nombre (hasta **14 caracteres**) y competir en el 
 
 ## 🚀 Cómo ejecutarlo
 
-Para preparar la versión web, usa un entorno virtual para no modificar el Python del sistema:
+Para preparar la versión web, instala las dependencias y ejecuta el constructor:
 
 ```bash
-python -m venv .venv
-# Windows
-.venv\Scripts\python.exe -m pip install -r requirements.txt
-.venv\Scripts\python.exe build_web.py
-.venv\Scripts\python.exe -m http.server 8000 --directory web_build/build/web
+python -m pip install -r requirements.txt
+python build_web.py
+python -m http.server 8000 --directory web_build/build/web
 # Abre http://localhost:8000
 ```
-
-En macOS/Linux, sustituye `.venv\Scripts\python.exe` por `.venv/bin/python`.
 
 También puedes ejecutar la versión de escritorio:
 
 ```bash
-.venv\Scripts\python.exe artillery_calculation.py
+python artillery_calculation.py
 ```
 
 ### 🌐 Publicar en Vercel
 
-Importa el repositorio en Vercel y conserva la configuración de compilación detectada desde `vercel.json`. El proceso crea un entorno virtual `.vercel-venv` para instalar las dependencias sin modificar el Python administrado por Vercel, ejecuta Pygbag y publica `web_build/build/web` como sitio estático. No se requiere una función backend ni una base de datos.
+Importa el repositorio en Vercel. El archivo `vercel.json` instala Pygbag, genera el juego WebAssembly y publica `build/web` como sitio estático. No se requiere una función backend ni una base de datos.
 
 ---
 

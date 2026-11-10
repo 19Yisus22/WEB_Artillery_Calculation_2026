@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "installCommand": "python -m venv .vercel-venv && .vercel-venv/bin/python -m pip install -r requirements.txt",
-  "buildCommand": ".vercel-venv/bin/python build_web.py",
+  "installCommand": "python -m pip install -r requirements.txt",
+  "buildCommand": "python build_web.py",
   "outputDirectory": "web_build/build/web",
   "framework": null
 }
