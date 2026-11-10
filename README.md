@@ -2,15 +2,16 @@
 
 <img src="https://capsule-render.vercel.app/api?type=waving&height=240&color=0:070a18,50:38e0ff,100:a082ff&text=ARTILLERY%20CALCULATION&fontColor=ffffff&fontSize=46&fontAlignY=38&desc=Dispara%20con%20matem%C3%A1ticas%20%C2%B7%20Newton-Raphson%20en%20acci%C3%B3n&descAlignY=60&descSize=18&animation=fadeIn" alt="Artillery Calculation" width="100%"/>
 
+<img src="logo.ico" alt="Logo" width="84"/>
+
 <a href="https://git.io/typing-svg"><img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=22&duration=3200&pause=900&color=38E0FF&center=true&vCenter=true&width=720&lines=Encuentra+el+%C3%A1ngulo+exacto+del+ca%C3%B1%C3%B3n+%F0%9F%8E%AF;10+rondas+%C2%B7+10+minutos+%C2%B7+cero+margen+de+error;Si+fallas%2C+la+ecuaci%C3%B3n+NO+cambia%3A+itera+y+corrige;Tolerancia+de+diana%3A+%C2%B10.005%C2%B0" alt="Typing SVG"/></a>
 
 <br/>
 
-![HTML5](https://img.shields.io/badge/HTML5-Canvas-38e0ff?style=for-the-badge&logo=html5&logoColor=white&labelColor=070a18)
-![JavaScript](https://img.shields.io/badge/JavaScript-Vanilla-ffb042?style=for-the-badge&logo=javascript&logoColor=white&labelColor=070a18)
-![Dependencias](https://img.shields.io/badge/Dependencias-0-34e096?style=for-the-badge&labelColor=070a18)
-![Archivo](https://img.shields.io/badge/Un%20solo-index.html-a082ff?style=for-the-badge&labelColor=070a18)
-![Offline](https://img.shields.io/badge/Funciona-Offline-ff5c6c?style=for-the-badge&labelColor=070a18)
+![Python](https://img.shields.io/badge/Python-Pygame-38e0ff?style=for-the-badge&logo=python&logoColor=white&labelColor=070a18)
+![WebAssembly](https://img.shields.io/badge/WebAssembly-Pygbag-a082ff?style=for-the-badge&logo=webassembly&logoColor=white&labelColor=070a18)
+![Vercel](https://img.shields.io/badge/Deploy-Vercel-ffffff?style=for-the-badge&logo=vercel&logoColor=white&labelColor=070a18)
+![Internet](https://img.shields.io/badge/Requiere-Internet-ffb042?style=for-the-badge&labelColor=070a18)
 
 **Simulador balístico educativo de Métodos Numéricos**
 *Mira el blanco, halla el ángulo, aplica Newton-Raphson y no falles.*
@@ -27,7 +28,7 @@
 
 Para lograrlo, el juego te da una herramienta de las matemáticas reales: el método de **Newton-Raphson**. Una tabla con **3 iteraciones** te muestra cómo converge el ángulo, y una de esas filas guarda la respuesta correcta. ¿Sabrás leerla?
 
-> 💡 Todo el juego vive en **un único archivo HTML** dibujado sobre `<canvas>`: sin librerías, sin instalación, sin servidor.
+> 💡 El juego conserva su implementación completa en Pygame y se ejecuta en el navegador mediante **Pygbag y WebAssembly**. Vercel sirve el resultado como un sitio estático, sin servidor de juego ni base de datos. El navegador necesita conexión a internet para descargar el runtime WebAssembly.
 
 ---
 
@@ -146,7 +147,8 @@ Si fallas **3 veces o más**, pueden aparecer **globos** en el campo. **Atravié
 | Acción | Mouse / Touch | Teclado |
 |---|:---:|:---:|
 | Iniciar partida | Botón **▶ Jugar** | `Enter` |
-| Disparar | Botón **FUEGO** | `Enter` |
+| Disparar | Botón **Disparar** | `Enter` |
+| Repetir disparo | Esperar la cuenta atrás de **3 segundos** | — |
 | Pedir pista (bombilla) | Icono 💡 | `Tab` |
 | Siguiente ecuación | Botón | `Enter` (tras acertar) |
 | Volver al menú | Botón **Menú** | `Esc` |
@@ -162,31 +164,30 @@ Al terminar puedes guardar tu nombre (hasta **14 caracteres**) y competir en el 
 
 `PART.` partidas · `ACIER.` aciertos · `ERR.` errores · `A/E` razón aciertos/errores · `PROM.` promedio
 
-> 🔒 El ranking se guarda en el **`localStorage`** de tu navegador: es privado, no usa servidor y **no se comparte** entre dispositivos. Cada nombre se registra **una sola vez**.
+> 🔒 En el navegador, el ranking se guarda en cookies locales: es privado, no usa servidor ni base de datos y **no se comparte** entre dispositivos. Cada nombre se registra **una sola vez**.
 
 ---
 
 ## 🚀 Cómo ejecutarlo
 
-No necesitas instalar nada.
+Para preparar la versión web, instala las dependencias y ejecuta el constructor:
 
 ```bash
-# 1. Clona el repositorio
-git clone https://github.com/<tu-usuario>/<tu-repositorio>.git
-
-# 2. Entra a la carpeta
-cd <tu-repositorio>
-
-# 3. Abre index.html con doble clic, o sirve la carpeta:
-python3 -m http.server 8000
-# → http://localhost:8000
+python -m pip install -r requirements.txt
+python build_web.py
+python -m http.server 8000 --directory web_build/build/web
+# Abre http://localhost:8000
 ```
 
-### 🌐 Publicar en GitHub Pages
+También puedes ejecutar la versión de escritorio:
 
-1. Ve a **Settings → Pages**.
-2. En *Source*, elige la rama `main` y la carpeta `/ (root)`.
-3. Guarda y espera a que aparezca tu enlace público.
+```bash
+python artillery_calculation.py
+```
+
+### 🌐 Publicar en Vercel
+
+Importa el repositorio en Vercel. El archivo `vercel.json` instala Pygbag, genera el juego WebAssembly y publica `build/web` como sitio estático. No se requiere una función backend ni una base de datos.
 
 ---
 
@@ -194,19 +195,26 @@ python3 -m http.server 8000
 
 ```
 📦 artillery-calculation
- ┣ 📜 index.html   ← todo el juego (HTML + CSS + JS + Canvas)
- ┣ 🖼️ logo.ico     ← favicon de la pestaña
- ┗ 📘 README.md    ← este archivo
+ ┣ 📜 artillery_calculation.py  ← juego, física, interfaz y animaciones
+ ┣ 📜 main.py                   ← punto de entrada web de Pygbag
+ ┣ 📜 requirements.txt          ← dependencias de escritorio y compilación web
+ ┣ 📜 build_web.py              ← crea un paquete web aislado del guardado local
+ ┣ 📜 vercel.json               ← compilación y publicación estática en Vercel
+ ┣ 🖼️ logo.ico                  ← logo original
+ ┣ 🖼️ favicon.png               ← icono de pestaña del juego web
+ ┣ 📁 web_build/                ← paquete web generado (no se sube como fuente)
+ ┗ 📘 README.md
 ```
 
-> ⚠️ Mantén `logo.ico` **en la misma carpeta** que `index.html` para que el ícono aparezca en la pestaña.
+> ⚠️ Mantén `favicon.png` en la raíz del proyecto para que Pygbag lo incluya en la pestaña del juego.
 
 ---
 
 ## 🛠️ Hecho con
 
-- **HTML5 Canvas 2D** para todo el render (terreno, balas, partículas, UI).
-- **JavaScript puro** (sin frameworks) para la física, el generador de retos y el ranking.
+- **Pygame y Pygbag/WebAssembly** para conservar el juego y ejecutarlo dentro del navegador.
+- **Bucle asíncrono sincronizado con el navegador** para ceder el control entre cuadros y mantener la interfaz fluida.
+- **Vercel estático** para publicar los archivos compilados; no hay servidor de partidas.
 - **Newton-Raphson** para la derivada numérica y las iteraciones mostradas en la tabla.
 - **Escalado adaptable** al tamaño de la ventana y a la densidad de píxeles.
 

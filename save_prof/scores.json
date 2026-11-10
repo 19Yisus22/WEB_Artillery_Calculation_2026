@@ -1,0 +1,23 @@
+{
+  "Yisus": {
+    "aciertos": 1,
+    "partidas": 2,
+    "promedio": 327.0
+  },
+  "Guest": {
+    "puntos_totales": 3486,
+    "aciertos_totales": 70,
+    "intentos_totales": 238,
+    "partidas": 7,
+    "mejor_puntuacion": 498,
+    "ultima_fecha": "2026-11-09 12:49"
+  },
+  "Invitado": {
+    "puntos_totales": 498,
+    "aciertos_totales": 10,
+    "intentos_totales": 25,
+    "partidas": 1,
+    "mejor_puntuacion": 498,
+    "ultima_fecha": "2026-11-10 14:37"
+  }
+}
