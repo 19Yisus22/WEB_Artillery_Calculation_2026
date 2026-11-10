@@ -1,7 +1,1 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null,
-  "installCommand": "pip3 install pygbag",
-  "buildCommand": "python3 -m pygbag --build app",
-  "outputDirectory": "app/build/web"
-}
+{"cleanUrls":true}
