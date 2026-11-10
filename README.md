@@ -2,8 +2,6 @@
 
 <img src="https://capsule-render.vercel.app/api?type=waving&height=240&color=0:070a18,50:38e0ff,100:a082ff&text=ARTILLERY%20CALCULATION&fontColor=ffffff&fontSize=46&fontAlignY=38&desc=Dispara%20con%20matem%C3%A1ticas%20%C2%B7%20Newton-Raphson%20en%20acci%C3%B3n&descAlignY=60&descSize=18&animation=fadeIn" alt="Artillery Calculation" width="100%"/>
 
-<img src="logo.ico" alt="Logo" width="84"/>
-
 <a href="https://git.io/typing-svg"><img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=22&duration=3200&pause=900&color=38E0FF&center=true&vCenter=true&width=720&lines=Encuentra+el+%C3%A1ngulo+exacto+del+ca%C3%B1%C3%B3n+%F0%9F%8E%AF;10+rondas+%C2%B7+10+minutos+%C2%B7+cero+margen+de+error;Si+fallas%2C+la+ecuaci%C3%B3n+NO+cambia%3A+itera+y+corrige;Tolerancia+de+diana%3A+%C2%B10.005%C2%B0" alt="Typing SVG"/></a>
 
 <br/>
