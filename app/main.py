@@ -16,16 +16,13 @@ os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 os.environ.setdefault("PYGAME_FORCE_SCALE", "photo")
 
 import pygame
-
 try:
     from pygame import gfxdraw
-except ImportError:
+except ImportError:          # algunos builds web de pygame no incluyen gfxdraw
     gfxdraw = None
 
-# Navegador (pygbag / WebAssembly): sin ventana nativa, sin archivos persistentes, sin fuentes del sistema.
-WEB = sys.platform == "emscripten"
-BASE_DIR = Path(globals().get("__file__", "main.py")).resolve().parent
-FONT_DIR = BASE_DIR / "assets" / "fonts"
+WEB = sys.platform == "emscripten"       # True cuando corre en el navegador (pygbag / WebAssembly)
+STORE_KEY = "artillery_calculation_scores"
 
 # ---------------------------------------------------------------------------
 # Configuración de pantalla
@@ -34,7 +31,7 @@ FONT_DIR = BASE_DIR / "assets" / "fonts"
 WIDTH, HEIGHT, FPS = 1280, 720, 60
 TITLE = "Artillery Calculation"
 
-SAVE_DIR = BASE_DIR / "save_prof"
+SAVE_DIR = Path(__file__).resolve().parent / "save_prof"
 SAVE_FILE = SAVE_DIR / "scores.json"
 NAME_MAX = 14
 
@@ -67,6 +64,9 @@ TIME_MAX = 600.0
 TIME_PENALTY_BASE, TIME_PENALTY_STEP, TIME_PENALTY_MAX = 10.0, 5.0, 60.0
 BALLOON_MIN_FAILS, BALLOON_LIFE = 3, 30.0
 BALLOON_TIME_BONUS, FREEZE_SECONDS = 45.0, 20.0
+BALLOON_R = 26              # radio (px) igual para TODOS los globos
+PENALIZE_NEAR_MISS = True   # True: «¡CASI!» también descuenta tiempo; False: solo el fallo total («lejos»)
+TIME_FLASH_SECONDS = 2.4    # cuánto dura el aviso «-10 s» sobre la tarjeta de la misión
 
 FIELD = pygame.Rect(16, 76, 836, 628)
 FW, FH = FIELD.size
@@ -87,22 +87,14 @@ RES_LEFT = pygame.Rect(64, 100, 520, 500)
 RES_SAVE = pygame.Rect(620, 100, 596, 128)
 RES_RANK = pygame.Rect(620, 240, 596, 360)
 
-def display_size():
-    """Resolución disponible: la ventana del navegador en la web o el monitor en escritorio."""
-    if WEB:
-        try:
-            import platform
-            return int(platform.window.innerWidth), int(platform.window.innerHeight)
-        except Exception:
-            return WIDTH, HEIGHT
-    try:
-        return pygame.display.get_desktop_sizes()[0]
-    except (AttributeError, IndexError, pygame.error):
-        return WIDTH, HEIGHT
-
 def screen_canvas():
-    """Tamaño lógico del lienzo: misma proporción que la pantalla de la máquina (mínimo 1280x720)."""
-    dw, dh = display_size()
+    """Tamaño lógico del lienzo: misma proporción que el monitor de la máquina (mínimo 1280x720)."""
+    if WEB:
+        return WIDTH, HEIGHT
+    try:
+        dw, dh = pygame.display.get_desktop_sizes()[0]
+    except (AttributeError, IndexError, pygame.error):
+        dw, dh = WIDTH, HEIGHT
     aspect = clamp(dw / max(dh, 1), 1.0, 3.2)
     return max(WIDTH, int(round(HEIGHT * aspect))), max(HEIGHT, int(round(WIDTH / aspect)))
 
@@ -160,6 +152,14 @@ def clamp(v, lo, hi):
 
 def lerp(a, b, t):
     return a + (b - a) * t
+
+def seg_point_dist(a, b, p):
+    """Distancia mínima del punto p al segmento a-b (para detectar que la bala atravesó un globo)."""
+    ax, ay = a
+    dx, dy = b[0] - ax, b[1] - ay
+    length = dx * dx + dy * dy
+    t = 0.0 if length <= 1e-12 else clamp(((p[0] - ax) * dx + (p[1] - ay) * dy) / length, 0.0, 1.0)
+    return math.hypot(ax + t * dx - p[0], ay + t * dy - p[1])
 
 def smoothstep(t):
     t = clamp(t, 0.0, 1.0)
@@ -590,20 +590,17 @@ def clean_name(raw):
 class ScoreStore:
     """Estadísticas por jugador en save_prof/scores.json."""
 
-    STORAGE_KEY = "artillery_calculation_scores"
-
     def __init__(self, path=None):
         self.path = Path(path) if path else SAVE_FILE
 
     def _read(self):
         try:
             if WEB:
-                import platform
-                raw = platform.window.localStorage.getItem(self.STORAGE_KEY) or "{}"
+                from platform import window
+                data = json.loads(window.localStorage.getItem(STORE_KEY) or "{}")
             else:
-                raw = self.path.read_text(encoding="utf-8")
-            data = json.loads(raw)
-        except (OSError, ValueError, AttributeError):
+                data = json.loads(self.path.read_text(encoding="utf-8"))
+        except Exception:
             return {}
         return data if isinstance(data, dict) else {}
 
@@ -656,14 +653,14 @@ class ScoreStore:
         }
         try:
             if WEB:
-                import platform
-                platform.window.localStorage.setItem(self.STORAGE_KEY, json.dumps(data, ensure_ascii=False))
+                from platform import window
+                window.localStorage.setItem(STORE_KEY, json.dumps(data, ensure_ascii=False))
             else:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 tmp = self.path.with_suffix(".tmp")
                 tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
                 tmp.replace(self.path)
-        except (OSError, AttributeError):
+        except Exception:
             return "error"
         return "ok"
 
@@ -742,18 +739,9 @@ class UI:
         for name, (family, size, bold) in spec.items():
             self.add(name, family, size, bold)
 
-    def _font(self, family, size, bold):
-        """En el navegador no hay fuentes del sistema: se usan las incluidas en assets/fonts."""
-        if WEB:
-            base = "DejaVuSansMono" if family == self.MONO else "Roboto"
-            path = FONT_DIR / f"{base}{'-Bold' if bold else '-Regular' if base == 'Roboto' else ''}.ttf"
-            if path.is_file():
-                return pygame.font.Font(str(path), size)
-        return pygame.font.SysFont(family, size, bold=bold)
-
     def add(self, name, family, size, bold):
-        font = self._font(family, size, bold)
-        sub = self._font(family, max(8, int(size * 0.72)), bold)
+        font = pygame.font.SysFont(family, size, bold=bold)
+        sub = pygame.font.SysFont(family, max(8, int(size * 0.72)), bold=bold)
         self.styles[name] = (font, sub)
 
     def fit_style(self, text, family, max_w, start, bold=True):
@@ -897,7 +885,7 @@ class TextInput:
                     and self._allowed(e.unicode):
                 self.text = self.text[: self.cursor] + e.unicode + self.text[self.cursor:]
                 self.cursor += 1
-            elif e.key == pygame.K_BACKSPACE and self.cursor > 0:
+            if e.key == pygame.K_BACKSPACE and self.cursor > 0:
                 self.text = self.text[: self.cursor - 1] + self.text[self.cursor:]
                 self.cursor -= 1
             elif e.key == pygame.K_DELETE:
@@ -1313,7 +1301,7 @@ class Game:
         pygame.display.set_caption(TITLE)
         self.fullscreen = not WEB
         self._open_display()
-        self.start_text()
+        pygame.key.start_text_input()
         self.clock = pygame.time.Clock()
         self.running = True
         self.ui = UI()
@@ -1332,40 +1320,28 @@ class Game:
 
     def _open_display(self):
  
-        flags = 0 if WEB else pygame.SCALED | (pygame.FULLSCREEN if self.fullscreen else pygame.RESIZABLE)
+        flags = pygame.SCALED if WEB else pygame.SCALED | (pygame.FULLSCREEN if self.fullscreen else pygame.RESIZABLE)
         size = screen_canvas()
         surface = None
-        for extra in ({} if WEB else {"vsync": 1}, {}):
+        for extra in (({},) if WEB else ({"vsync": 1}, {})):
             try:
                 surface = pygame.display.set_mode(size, flags, **extra)
                 break
             except pygame.error:
                 continue
         if surface is None:
-            try:
-                surface = pygame.display.set_mode(size)
-            except pygame.error:
-                pygame.display.quit()
-                pygame.display.init()
-                surface = pygame.display.set_mode(size)
+            surface = pygame.display.set_mode(size)
         self.display = surface
         self.canvas = surface.get_size()
         self.ox, self.oy = (self.canvas[0] - WIDTH) // 2, (self.canvas[1] - HEIGHT) // 2
         self.screen = surface.subsurface(pygame.Rect(self.ox, self.oy, WIDTH, HEIGHT))
-
-    @staticmethod
-    def start_text():
-        try:
-            pygame.key.start_text_input()
-        except pygame.error:
-            pass
 
     def toggle_fullscreen(self):
         if WEB:
             return
         self.fullscreen = not self.fullscreen
         self._open_display()
-        self.start_text()
+        pygame.key.start_text_input()
         self.cursor = None
 
     def mouse_pos(self):
@@ -1464,6 +1440,7 @@ class Game:
         self.time_flash, self.time_out = None, False
         self.double_next, self.free_hints = False, 0
         self.balloons, self.pops, self.mini_toast, self.balloon_at = [], [], None, -9
+        self.pop_fx, self.balloon_idx = [], 0
         self.chip_rects = {}
         self.last_story = None
         self.last_tip = None
@@ -1504,6 +1481,7 @@ class Game:
         self.cells_prev, self.flash_t0 = frozenset(), -9.0
         self.free_hints = 0
         self.balloons, self.pops, self.mini_toast, self.balloon_at = [], [], None, -9
+        self.pop_fx, self.balloon_idx = [], 0
         self.fails = 0
         self.tip_fail, self.last_tip = -1, None
         self.solved = False
@@ -1585,6 +1563,7 @@ class Game:
             self.say(f"Usa un ángulo entre 1° y {MAX_ANGLE:.0f}°", C_BAD)
             return
         self.pending = {"angle": value}
+        self.balloon_idx = 0
         self.shot = Shot(value, self.problem)
         self.phase = FLIGHT
         self.message = None
@@ -1621,7 +1600,8 @@ class Game:
         if not hit:
             self.fails += 1
             res["tip"] = self.maybe_tip(res)
-            self.time_penalty()
+            if cat == "lejos" or PENALIZE_NEAR_MISS:
+                self.time_penalty()   # acertar NUNCA descuenta tiempo
             self.maybe_spawn_balloons()
         color = CAT_COLOR[cat]
         if hit:
@@ -1651,30 +1631,57 @@ class Game:
         self.time_flash = {"text": f"-{pen:.0f} s", "age": 0.0}
 
     def maybe_spawn_balloons(self):
-        """Tras 3 o más fallos seguidos, de la nada pueden aparecer globos con ayudas."""
+        """Tras 3 o más fallos seguidos pueden aparecer globos con ayudas, TODOS del mismo tamaño y en
+        posiciones aleatorias. Viven en coordenadas del mundo: la bala los revienta al atravesarlos."""
         if self.fails < BALLOON_MIN_FAILS or self.fails - self.balloon_at < 2 or self.balloons:
             return
         if random.random() >= min(0.8, 0.5 + 0.1 * (self.fails - BALLOON_MIN_FAILS)):
             return
-        self.balloon_at = self.fails
+        p = self.problem
+        z, x0 = camera_goal(p)          # vista en reposo: así quedan visibles mientras se apunta
+        tsx, tsy = (p.side * p.dist - x0) * z, GROUND_Y_REF - p.height * z
+        gsx = -x0 * z
         placed = []
         for kind, color in random.sample(BALLOON_KINDS, random.choice((1, 2, 2, 3))):
-            for _ in range(30):
-                x, y = random.uniform(110, FW - 110), random.uniform(230, 400)
-                if all(math.hypot(x - px, y - py) > 100 for px, py in placed):
-                    break
-            placed.append((x, y))
-            self.balloons.append({"kind": kind, "color": color, "bx": x, "by": y, "x": x, "y": y,
-                                  "ph": random.uniform(0, math.tau), "age": 0.0, "life": BALLOON_LIFE})
-        self.mini_toast = {"age": 0.0, "life": 3.2}
+            for _ in range(120):
+                sx, sy = random.uniform(80, FW - 80), random.uniform(140, 400)
+                wx, wy = sx / z + x0, (GROUND_Y_REF - sy) / z
+                ground_sy = GROUND_Y_REF - terrain_height(wx, p.plateau, p.dist, p.side) * z
+                if sy > ground_sy - BALLOON_R - 40:
+                    continue                                    # dentro o pegado al terreno
+                if math.hypot(sx - tsx, sy - tsy) < 80 or (abs(sx - tsx) < 45 and sy > tsy):
+                    continue                                    # tapa el blanco o su poste
+                if math.hypot(sx - gsx, sy - GROUND_Y_REF) < 100:
+                    continue                                    # pegado al cañón
+                if any(math.hypot(sx - qx, sy - qy) < 2 * BALLOON_R + 24 for qx, qy in placed):
+                    continue
+                placed.append((sx, sy))
+                self.balloons.append({"kind": kind, "color": color, "wx": wx, "wy": wy,
+                                      "ph": random.uniform(0, math.tau), "age": 0.0, "life": BALLOON_LIFE})
+                break
+        if self.balloons:
+            self.balloon_at = self.fails
+            self.mini_toast = {"age": 0.0, "life": 3.2}
 
-    def pop_balloon_at(self, pos):
-        for b in reversed(self.balloons):
-            if math.hypot(b["x"] - pos[0], b["y"] - pos[1]) <= 32:
+    def check_balloon_hits(self):
+        """Revienta todo globo que la bala atraviese. Se revisa el TRAMO recorrido desde el último
+        cuadro (no solo la punta), así ninguno se escapa aunque la bala vaya rápida."""
+        shot = self.shot
+        if not shot:
+            return
+        path = shot.path
+        pts = path[max(0, self.balloon_idx - 1):]
+        if shot.pos != pts[-1]:
+            pts = pts + [shot.pos]
+        self.balloon_idx = len(path)
+        if not self.balloons or len(pts) < 2:
+            return
+        reach = BALLOON_R / self.camera.zoom + BULLET_R      # radio del globo en metros + radio de la bala
+        for b in list(self.balloons):
+            c = (b["wx"], b["wy"])
+            if any(seg_point_dist(u, v, c) <= reach for u, v in zip(pts, pts[1:])):
                 self.balloons.remove(b)
                 self.apply_balloon(b)
-                return True
-        return False
 
     def apply_balloon(self, b):
         kind, color = b["kind"], b["color"]
@@ -1692,19 +1699,26 @@ class Game:
             text = "¡PISTA GRATIS!"
         else:
             self.time_left, text = min(TIME_MAX, self.time_left + BALLOON_TIME_BONUS), f"+{BALLOON_TIME_BONUS:.0f} s"
-        self.pops.append({"x": b["x"], "y": b["y"], "text": text, "color": color, "age": 0.0, "life": 1.5})
-        z = self.camera.zoom
-        self.burst(b["x"] / z + self.camera.x0, (GROUND_Y_REF - b["y"]) / z, 24, (20, 70), (0.4, 0.9), (2, 4),
-                   [color, (255, 255, 255)], gravity=20.0, glow=True)
+        wx, wy, z = b["wx"], b["wy"], self.camera.zoom
+        self.pops.append({"x": wx, "y": wy, "text": text, "color": color, "age": 0.0, "life": 1.5})
+        # Animación de explosión: cáscara que se rompe + onda + fragmentos y chispas
+        self.pop_fx.append({"x": wx, "y": wy, "color": color, "age": 0.0, "life": 0.5})
+        self.rings.append([wx, wy, 0.0, 0.55, color, 62])
+        self.rings.append([wx, wy, 0.0, 0.32, (255, 255, 255), 36])
+        self.burst(wx, wy, 30, (28 / z, 100 / z), (0.5, 1.1), (2.5, 5.5),
+                   [color, mix(color, (255, 255, 255), 0.55), (255, 255, 255)], gravity=34.0 / z, glow=True)
+        self.shake = max(self.shake, 3.0)
 
     def update_balloons(self, dt):
         for b in self.balloons:
             b["age"] += dt
-            b["x"], b["y"] = b["bx"], b["by"]
         self.balloons = [b for b in self.balloons if b["age"] < b["life"]]
         for q in self.pops:
             q["age"] += dt
         self.pops = [q for q in self.pops if q["age"] < q["life"]]
+        for fx in self.pop_fx:
+            fx["age"] += dt
+        self.pop_fx = [fx for fx in self.pop_fx if fx["age"] < fx["life"]]
         if self.mini_toast:
             self.mini_toast["age"] += dt
             if self.mini_toast["age"] >= self.mini_toast["life"]:
@@ -1745,7 +1759,7 @@ class Game:
         status = self.store.save_match(name, m.points, m.hits, m.shots)
         if status == "ok":
             self.saved_name = name
-            self.save_note = (f"Puntuación de «{name}» guardada en save_prof", C_GOOD)
+            self.save_note = (f"Puntuación de «{name}» guardada" + ("" if WEB else " en save_prof"), C_GOOD)
             self.menu_input.set_text(name)
             self.rows = self.store.ranking(10)
         elif status == "exists":
@@ -1772,12 +1786,12 @@ class Game:
             return
         if hasattr(e, "pos"):
             e = pygame.event.Event(e.type, {**e.dict, "pos": (e.pos[0] - self.ox, e.pos[1] - self.oy)})
-        if e.type == pygame.KEYDOWN and e.key == pygame.K_F11 and not WEB:
+        if e.type == pygame.KEYDOWN and e.key == pygame.K_F11:
             self.toggle_fullscreen()
             return
         if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
             if self.state == MENU:
-                self.running = WEB
+                self.running = False
             else:
                 self.go_menu()
             return
@@ -1793,9 +1807,6 @@ class Game:
             self.start_match()
 
     def event_play(self, e):
-        if (e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and FIELD.collidepoint(e.pos)
-                and self.pop_balloon_at((e.pos[0] - FIELD.x, e.pos[1] - FIELD.y))):
-            return 
         if self.phase == AIM:
             before = self.angle_input.text
             self.angle_input.handle(e)
@@ -1853,7 +1864,7 @@ class Game:
             self.time_left -= real
         if self.time_flash:
             self.time_flash["age"] += dt
-            if self.time_flash["age"] > 1.8:
+            if self.time_flash["age"] > TIME_FLASH_SECONDS:
                 self.time_flash = None
         self.update_balloons(dt)
         if self.time_left <= 0.0: 
@@ -1883,6 +1894,7 @@ class Game:
 
         if self.phase == FLIGHT:
             self.shot.advance(dt)
+            self.check_balloon_hits()
             if self.shot.done:
                 self.finish_shot()
         elif self.hold > 0:
@@ -1943,9 +1955,6 @@ class Game:
         cursor = pygame.SYSTEM_CURSOR_ARROW
         if any(b.enabled and b.rect.collidepoint(mouse) for b in self.active_buttons()):
             cursor = pygame.SYSTEM_CURSOR_HAND
-        elif self.state == PLAY and any(math.hypot(b["x"] + FIELD.x - mouse[0], b["y"] + FIELD.y - mouse[1]) <= 32
-                                         for b in self.balloons):
-            cursor = pygame.SYSTEM_CURSOR_HAND
         elif self.active_input().rect.collidepoint(mouse):
             cursor = pygame.SYSTEM_CURSOR_IBEAM
         if cursor != self.cursor:
@@ -1977,6 +1986,7 @@ class Game:
         self.draw_status(s)
         self.draw_toast(s)
         self.draw_next_button(s)
+        self.draw_time_flash(s)
 
     def chip(self, dst, right, y, label, value, color):
         ui = self.ui
@@ -2005,11 +2015,27 @@ class Game:
         x = WIDTH - 16
         for label, value, color in reversed(items):
             x = self.chip(s, x, 14, label, value, color)
-        if self.time_flash:
-            rect, k = self.chip_rects["TIEMPO"], clamp(1.0 - self.time_flash["age"] / 1.8, 0.0, 1.0)
-            txt = ui.surf(self.time_flash["text"], "h2", C_BAD).copy()
-            txt.set_alpha(int(255 * k))
-            s.blit(txt, txt.get_rect(midtop=(rect.centerx, rect.bottom + 4 + self.time_flash["age"] * 10)))
+
+    def draw_time_flash(self, s):
+        """Descuento de tiempo («-10 s»). Se dibuja AL FINAL para quedar ENCIMA de la tarjeta de la misión."""
+        f = self.time_flash
+        rect = self.chip_rects.get("TIEMPO")
+        if not f or rect is None:
+            return
+        ui, age = self.ui, f["age"]
+        k = min(clamp(age / 0.12, 0.0, 1.0), clamp((TIME_FLASH_SECONDS - age) / 0.5, 0.0, 1.0))
+        head = ui.surf("DESCUENTO POR FALLO", "label", (255, 170, 180))
+        amount = ui.surf(f["text"], "stat", C_BAD)
+        w = max(head.get_width(), amount.get_width()) + 40
+        h = head.get_height() + amount.get_height() + 22
+        card = ui.rounded((w, h), 14, (46, 8, 18, 248), (*C_BAD, 235), 2).copy()
+        card.blit(head, head.get_rect(midtop=(w // 2, 8)))
+        card.blit(amount, amount.get_rect(midtop=(w // 2, 8 + head.get_height() + 2)))
+        if age < 0.25:                                           # entrada con pequeño rebote
+            sc = 0.7 + 0.3 * ease_out_back(age / 0.25)
+            card = pygame.transform.smoothscale(card, (max(1, int(w * sc)), max(1, int(h * sc))))
+        card.set_alpha(int(255 * k))
+        s.blit(card, card.get_rect(midtop=(rect.centerx, rect.bottom + 8 + 10 * ease_out_cubic(age / TIME_FLASH_SECONDS))))
 
     def draw_field(self):
         surf = self.field_surf
@@ -2142,13 +2168,17 @@ class Game:
             pygame.draw.polygon(surf, (255, 236, 176), star)
 
     def draw_balloons(self, surf):
-        """Globos de ayuda (se reventan con clic) y los textos que salen al reventarlos."""
+        """Globos de ayuda (la bala los revienta), su animación de explosión y los textos de premio."""
         ui, t = self.ui, self.clock_t
         for b in self.balloons:
             if b["life"] - b["age"] < 2.5 and int(b["age"] * 6) % 2 == 0:
                 continue
-            r = 26 * ease_out_back(clamp(b["age"] / 0.4, 0.0, 1.0))
-            x, y, color = b["x"], b["y"], b["color"]
+            x, y = self.view(b["wx"], b["wy"])
+            if not -60 < x < FW + 60 or not -60 < y < FH + 60:
+                continue
+            y += 3.0 * math.sin(t * 2.2 + b["ph"])            # balanceo solo visual
+            r = BALLOON_R * ease_out_back(clamp(b["age"] / 0.4, 0.0, 1.0))
+            color = b["color"]
             pygame.draw.lines(surf, (150, 160, 210), False,
                               [(x, y + r + 4), (x - 5, y + r + 14), (x + 4, y + r + 24), (x - 2, y + r + 34)], 1)
             pygame.draw.polygon(surf, mix(color, (0, 0, 0), 0.4), [(x - 4, y + r + 6), (x + 4, y + r + 6), (x, y + r - 2)])
@@ -2164,11 +2194,29 @@ class Game:
                 ui.text(surf, f"+{BALLOON_TIME_BONUS:.0f}", "small_b", C_DARK, (x, y), "center")
             else:
                 ui.text(surf, "?", "h1", C_DARK, (x, y), "center")
+        for fx in self.pop_fx:                                  # explosión del globo
+            k = fx["age"] / fx["life"]
+            e = ease_out_cubic(k)
+            x, y = self.view(fx["x"], fx["y"])
+            color, dark = fx["color"], (18, 20, 50)
+            add_glow(surf, (x, y), 8 * max(3, int((26 + 40 * e) / 8)), fade_color(color, 0.8 * (1.0 - k)))
+            if k < 0.28:                                        # cáscara que se infla, se blanquea y revienta
+                aa_circle(surf, mix(color, (255, 255, 255), k / 0.28), (x, y), BALLOON_R * (1.0 + 0.55 * k / 0.28))
+            pygame.draw.circle(surf, mix(color, dark, k), (int(x), int(y)),
+                               int(BALLOON_R * (0.8 + 1.5 * e)), max(1, int(5 * (1.0 - k))))
+            for i in range(10):                                 # jirones de goma que salen disparados
+                a = i * math.tau / 10 + fx["x"] * 0.37
+                d, sz = BALLOON_R * (0.4 + 2.0 * e), BALLOON_R * 0.40 * (1.0 - k)
+                cx, cy = x + math.cos(a) * d, y + math.sin(a) * d
+                tri = [(cx + math.cos(a + w) * sz * m, cy + math.sin(a + w) * sz * m)
+                       for w, m in ((0.0, 1.5), (2.4, 1.0), (-2.4, 1.0))]
+                pygame.draw.polygon(surf, mix(color, dark, k ** 1.5), tri)
         for q in self.pops:
             k = q["age"] / q["life"]
+            sx, sy = self.view(q["x"], q["y"])
             txt = ui.surf(q["text"], "h2", q["color"]).copy()
             txt.set_alpha(int(255 * (1 - k ** 2)))
-            surf.blit(txt, txt.get_rect(midbottom=(q["x"], q["y"] - 30 - 40 * ease_out_cubic(k))))
+            surf.blit(txt, txt.get_rect(midbottom=(sx, sy - 30 - 40 * ease_out_cubic(k))))
 
     def draw_effects(self, surf):
         for p in self.particles:
@@ -2371,7 +2419,7 @@ class Game:
             rect = pygame.Rect(FIELD.right - 256, FIELD.y + 14, 240, 52)
             box = ui.rounded(rect.size, 12, (44, 32, 10, 255), (*C_AMBER, 220), 1).copy()
             ui.text(box, "¡SE GENERÓ UNA AYUDA!", "small_b", C_AMBER, (14, 8))
-            ui.text(box, "Revienta los globos para usarla", "tiny", (255, 236, 200), (14, 29))
+            ui.text(box, "Atraviésalos con tu disparo", "tiny", (255, 236, 200), (14, 29))
             box.set_alpha(int(255 * k))
             s.blit(box, rect.topleft)
         y = FIELD.y + 76
@@ -2497,7 +2545,7 @@ class Game:
             (C_GOOD, "newton", "USA NEWTON-RAPHSON",
              "La fórmula de abajo corrige un ángulo de prueba paso a paso. ¡La tabla guarda la respuesta!"),
             (C_AMBER, "bulb", "PIDE AYUDA",
-             f"Bombilla: {MAX_HINTS} pistas (1 cada {HINT_COOLDOWN:.0f} s). Si fallas mucho salen globos con ayudas: ¡revéntalos!"),
+             f"Bombilla: {MAX_HINTS} pistas (1 cada {HINT_COOLDOWN:.0f} s). Si fallas mucho salen globos con ayudas: ¡atraviésalos con la bala!"),
         )
         gap = 8
         cw = (r.w - 40 - gap) // 2
@@ -2572,43 +2620,20 @@ class Game:
         pygame.display.flip()
 
     async def run(self):
-        since_check = 0.0
         while self.running:
             raw = self.clock.tick(FPS) / 1000.0
-            since_check += raw
-            if WEB and since_check > 0.5:
-                since_check = 0.0
-                if screen_canvas() != self.canvas:
-                    self._open_display()
-                    self.cursor = None
             for event in pygame.event.get():
                 self.handle_event(event)
             self.update(min(raw, 0.05), raw)
             self.draw()
-            await asyncio.sleep(0)
-
-def show_loading():
-    """Pantalla de carga en la web mientras se generan los fondos del juego."""
-    pygame.init()
-    surface = pygame.display.set_mode(screen_canvas())
-    surface.fill(C_BG)
-    font = pygame.font.Font(str(FONT_DIR / "Roboto-Bold.ttf"), 34)
-    text = font.render("Cargando Artillery Calculation...", True, C_ACCENT)
-    surface.blit(text, text.get_rect(center=surface.get_rect().center))
-    pygame.display.flip()
+            await asyncio.sleep(0)     # cede el control al navegador
 
 async def main():
-    if WEB:
-        show_loading()
-        await asyncio.sleep(0.1)
     game = Game()
     try:
         await game.run()
     finally:
-        try:
-            pygame.key.stop_text_input()
-        except pygame.error:
-            pass
+        pygame.key.stop_text_input()
         pygame.quit()
     if not WEB:
         sys.exit(0)

@@ -1,6 +1,7 @@
 {
-  "installCommand": "echo skip",
-  "buildCommand": "python3 -m venv venv && ./venv/bin/pip install --upgrade pip && ./venv/bin/pip install pygbag && ./venv/bin/python -m pygbag --build .",
-  "outputDirectory": "build/web",
-  "framework": null
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "pip3 install pygbag",
+  "buildCommand": "python3 -m pygbag --build app",
+  "outputDirectory": "app/build/web"
 }
