@@ -374,9 +374,8 @@ body.game-ready #game-loader {
     <button id="rotate-screen" type="button">Intentar giro automático</button>
   </div>
 </div>
-<input id="mobile-angle-input" type="text" inputmode="decimal" enterkeyhint="done"
-  maxlength="7" autocomplete="off" autocapitalize="off" spellcheck="false"
-  aria-label="Ángulo del disparo, de 0 a 180 grados">
+<input id="mobile-angle-input" type="text" inputmode="text" enterkeyhint="done"
+  autocomplete="off" autocapitalize="off" spellcheck="false">
 <script>
 (() => {
   const canvas = document.getElementById("canvas");
@@ -462,20 +461,43 @@ body.game-ready #game-loader {
       const viewport = window.visualViewport;
       const width = viewport ? viewport.width : document.documentElement.clientWidth;
       const height = viewport ? viewport.height : document.documentElement.clientHeight;
-      if (!width || !height || !canvas.width || !canvas.height) return;
-      const scale = Math.min(width / canvas.width, height / canvas.height);
-      canvas.style.setProperty("width", `${Math.floor(canvas.width * scale)}px`, "important");
-      canvas.style.setProperty("height", `${Math.floor(canvas.height * scale)}px`, "important");
+      if (!width || !height) return;
+      const mobile = coarsePointer.matches;
+      const memory = Number(navigator.deviceMemory) || 4;
+      const cores = Number(navigator.hardwareConcurrency) || 4;
+      const deviceLimit = !mobile ? 1
+        : memory <= 2 || cores <= 2 ? 0.58
+        : memory <= 4 || cores <= 4 ? 0.76
+        : 0.9;
+      const displayScale = Math.min(width / 1280, height / 720)
+        * (window.devicePixelRatio || 1);
+      const renderScale = Math.min(deviceLimit, Math.max(0.25, displayScale));
+      const renderWidth = String(Math.max(1, Math.round(1280 * renderScale)));
+      const renderHeight = String(Math.max(1, Math.round(720 * renderScale)));
+      if (canvas.getAttribute("data-render-width") !== renderWidth) {
+        canvas.setAttribute("data-render-width", renderWidth);
+      }
+      if (canvas.getAttribute("data-render-height") !== renderHeight) {
+        canvas.setAttribute("data-render-height", renderHeight);
+      }
+      if (!canvas.width || !canvas.height) return;
+      const scale = Math.min(width / 1280, height / 720);
+      canvas.style.setProperty("width", `${Math.floor(1280 * scale)}px`, "important");
+      canvas.style.setProperty("height", `${Math.floor(720 * scale)}px`, "important");
       positionMobileAngleInput();
     });
   };
   const positionMobileAngleInput = () => {
     if (mobileAngleInput.getAttribute("data-editing") !== "true") return;
     const rect = canvas.getBoundingClientRect();
-    mobileAngleInput.style.left = `${rect.left + rect.width * 884 / 1280}px`;
-    mobileAngleInput.style.top = `${rect.top + rect.height * 294 / 720}px`;
-    mobileAngleInput.style.width = `${rect.width * 226 / 1280}px`;
-    mobileAngleInput.style.height = `${rect.height * 48 / 720}px`;
+    const x = Number(mobileAngleInput.getAttribute("data-input-x"));
+    const y = Number(mobileAngleInput.getAttribute("data-input-y"));
+    const width = Number(mobileAngleInput.getAttribute("data-input-width"));
+    const height = Number(mobileAngleInput.getAttribute("data-input-height"));
+    mobileAngleInput.style.left = `${rect.left + rect.width * x / 1280}px`;
+    mobileAngleInput.style.top = `${rect.top + rect.height * y / 720}px`;
+    mobileAngleInput.style.width = `${rect.width * width / 1280}px`;
+    mobileAngleInput.style.height = `${rect.height * height / 720}px`;
   };
   const hideMobileAngleInput = () => {
     mobileAngleInput.setAttribute("data-editing", "false");
@@ -486,7 +508,13 @@ body.game-ready #game-loader {
     const rect = canvas.getBoundingClientRect();
     const x = (event.clientX - rect.left) / rect.width * 1280;
     const y = (event.clientY - rect.top) / rect.height * 720;
-    if (x >= 884 && x <= 1110 && y >= 294 && y <= 342) {
+    const inputX = Number(mobileAngleInput.getAttribute("data-input-x"));
+    const inputY = Number(mobileAngleInput.getAttribute("data-input-y"));
+    const inputWidth = Number(mobileAngleInput.getAttribute("data-input-width"));
+    const inputHeight = Number(mobileAngleInput.getAttribute("data-input-height"));
+    const inputEnabled = mobileAngleInput.getAttribute("data-input-enabled") === "true";
+    if (inputEnabled && x >= inputX && x <= inputX + inputWidth
+        && y >= inputY && y <= inputY + inputHeight) {
       mobileAngleInput.setAttribute("data-editing", "true");
       mobileAngleInput.style.display = "block";
       positionMobileAngleInput();
@@ -571,9 +599,9 @@ with tempfile.TemporaryDirectory(prefix="artillery-pygbag-") as temp_dir:
             "pygbag",
             "--build",
             "--width",
-            "1920",
+            "1280",
             "--height",
-            "1080",
+            "720",
             "--title",
             "Artillery Calculation",
             "main.py",
@@ -590,14 +618,14 @@ with tempfile.TemporaryDirectory(prefix="artillery-pygbag-") as temp_dir:
 output_path = APP_DIR / "build" / "web" / "index.html"
 html = output_path.read_text(encoding="utf-8")
 html, width_count = re.subn(
-    r"(?m)^WIDTH=\d+\s+# 1920$",
-    "WIDTH=1920  # 1920",
+    r"(?m)^WIDTH=\d+\s+# 1280$",
+    "WIDTH=1280  # 1280",
     html,
     count=1,
 )
 html, height_count = re.subn(
-    r"(?m)^HEIGHT=\d+\s+# 1080$",
-    "HEIGHT=1080  # 1080",
+    r"(?m)^HEIGHT=\d+\s+# 720$",
+    "HEIGHT=720  # 720",
     html,
     count=1,
 )

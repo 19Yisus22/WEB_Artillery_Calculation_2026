@@ -698,22 +698,23 @@ class GameSettings:
         self.path = SAVE_DIR / "settings.json"
 
     def load_quality(self):
+        default = "bajo" if sys.platform == "emscripten" else "medio"
         if sys.platform == "emscripten":
             import platform
 
             for item in str(platform.window.document.cookie).split(";"):
                 key, separator, value = item.strip().partition("=")
                 if separator and key == "artillery_graphics_quality":
-                    return value if value in GRAPHICS_PROFILES else "medio"
-            return "medio"
+                    return value if value in GRAPHICS_PROFILES else default
+            return default
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except FileNotFoundError:
-            return "medio"
+            return default
         except (OSError, ValueError):
-            return "medio"
+            return default
         quality = data.get("calidad_grafica") if isinstance(data, dict) else None
-        return quality if isinstance(quality, str) and quality in GRAPHICS_PROFILES else "medio"
+        return quality if isinstance(quality, str) and quality in GRAPHICS_PROFILES else default
 
     def load_music_enabled(self):
         if sys.platform == "emscripten":
@@ -1800,25 +1801,11 @@ class Game:
         if sys.platform == "emscripten":
             self.fullscreen = False
             self.output_surface = pygame.display.get_surface()
-            if self.output_surface is None:
-                self.output_surface = pygame.display.set_mode((WIDTH, HEIGHT))
+            self._resize_web_output()
             self.canvas = (WIDTH, HEIGHT)
             self.ox = self.oy = 0
             self.display = pygame.Surface(self.canvas).convert()
             self.screen = self.display
-            self.web_scale = min(
-                self.output_surface.get_width() / WIDTH,
-                self.output_surface.get_height() / HEIGHT,
-            )
-            frame_size = (
-                round(WIDTH * self.web_scale),
-                round(HEIGHT * self.web_scale),
-            )
-            self.web_offset = (
-                (self.output_surface.get_width() - frame_size[0]) // 2,
-                (self.output_surface.get_height() - frame_size[1]) // 2,
-            )
-            self.web_frame = pygame.Surface(frame_size).convert()
             return
 
         self.output_surface = None
@@ -1838,40 +1825,121 @@ class Game:
         self.ox, self.oy = (self.canvas[0] - WIDTH) // 2, (self.canvas[1] - HEIGHT) // 2
         self.screen = surface.subsurface(pygame.Rect(self.ox, self.oy, WIDTH, HEIGHT))
 
+    def _resize_web_output(self):
+        import platform
+
+        canvas = platform.window.document.getElementById("canvas")
+        requested_size = (
+            int(canvas.getAttribute("data-render-width") or WIDTH),
+            int(canvas.getAttribute("data-render-height") or HEIGHT),
+        )
+        current = pygame.display.get_surface()
+        if current is None or current.get_size() != requested_size:
+            self.output_surface = pygame.display.set_mode(requested_size)
+        else:
+            self.output_surface = current
+
+        self.web_scale = min(
+            self.output_surface.get_width() / WIDTH,
+            self.output_surface.get_height() / HEIGHT,
+        )
+        frame_size = (
+            max(1, round(WIDTH * self.web_scale)),
+            max(1, round(HEIGHT * self.web_scale)),
+        )
+        self.web_offset = (
+            (self.output_surface.get_width() - frame_size[0]) // 2,
+            (self.output_surface.get_height() - frame_size[1]) // 2,
+        )
+        self.web_frame = pygame.Surface(frame_size).convert()
+
+    def _sync_web_resolution(self):
+        if sys.platform != "emscripten":
+            return
+        import platform
+
+        canvas = platform.window.document.getElementById("canvas")
+        requested_size = (
+            int(canvas.getAttribute("data-render-width") or WIDTH),
+            int(canvas.getAttribute("data-render-height") or HEIGHT),
+        )
+        current = pygame.display.get_surface()
+        if current is None or current.get_size() != requested_size:
+            self._resize_web_output()
+
     def toggle_fullscreen(self):
         self.fullscreen = not self.fullscreen
         self._open_display()
         pygame.key.start_text_input()
         self.cursor = None
 
-    def sync_mobile_angle_input(self):
+    def sync_mobile_text_input(self):
         mobile_input = self.mobile_angle_input
         if mobile_input is None:
             return
+
+        if self.state == MENU and self.menu_page == "inicio":
+            field = self.menu_input
+        elif self.state == PLAY and self.phase == AIM:
+            field = self.angle_input
+        elif self.state == RESULT and not self.saved_name:
+            field = self.result_input
+        else:
+            field = None
 
         editing = mobile_input.getAttribute("data-editing") == "true"
         submitting = mobile_input.getAttribute("data-submit") == "true"
         if submitting:
             mobile_input.removeAttribute("data-submit")
-        if self.state == PLAY and self.phase == AIM and (editing or submitting):
-            text = ""
-            for char in str(mobile_input.value):
-                if len(text) >= self.angle_input.max_len:
-                    break
-                if char.isascii() and char.isdigit() or char in ".,":
-                    if char in ".," and any(separator in text for separator in ".,"):
-                        continue
-                    text += char
-            if text != self.angle_input.text:
-                self.angle_input.set_text(text)
-                self.message = None
-            if submitting:
-                self.fire()
-        else:
+
+        if field is None:
+            mobile_input.setAttribute("data-input-enabled", "false")
             if editing:
                 mobile_input.blur()
-            if str(mobile_input.value) != self.angle_input.text:
-                mobile_input.value = self.angle_input.text
+            return
+
+        rect = field.rect
+        attributes = {
+            "data-input-enabled": "true",
+            "data-input-x": str(rect.x),
+            "data-input-y": str(rect.y),
+            "data-input-width": str(rect.width),
+            "data-input-height": str(rect.height),
+            "inputmode": "decimal" if field.numeric else "text",
+            "maxlength": str(field.max_len),
+            "aria-label": "Ángulo del disparo" if field.numeric else "Nombre del jugador",
+        }
+        for name, value in attributes.items():
+            if mobile_input.getAttribute(name) != value:
+                mobile_input.setAttribute(name, value)
+
+        if editing or submitting:
+            text = ""
+            for char in str(mobile_input.value):
+                if len(text) >= field.max_len:
+                    break
+                if field.numeric:
+                    if not (char.isascii() and char.isdigit() or char in ".,"):
+                        continue
+                    if char in ".," and any(separator in text for separator in ".,"):
+                        continue
+                elif not (char.isalnum() or char in " _-."):
+                    continue
+                text += char
+            if text != field.text:
+                field.set_text(text)
+                if field is self.angle_input:
+                    self.message = None
+            if str(mobile_input.value) != text:
+                mobile_input.value = text
+            field.focused = True
+            if submitting:
+                if field is self.angle_input:
+                    self.fire()
+                elif field is self.result_input:
+                    self.finish_match_save()
+        elif str(mobile_input.value) != field.text:
+            mobile_input.value = field.text
 
     def mouse_pos(self):
         x, y = pygame.mouse.get_pos()
@@ -1969,17 +2037,18 @@ class Game:
         self.save_btn = Button((RES_SAVE.x + 372, RES_SAVE.y + 48, 200, 50), "Guardar", "good")
         self.again_btn = Button((64, 624, 250, 56), "Jugar de Nuevo", "primary")
         self.menu_btn = Button((330, 624, 250, 56), "Menú", "ghost")
-        self.music_btn = Button((0, 0, 48, 46), "", "ghost", style="small_b")
+        self.music_btn = Button((0, 0, 42, 42), "", "ghost", style="small_b")
 
     def _place_music_button(self):
         rect = {
-            MENU: (388, 630, 48, 42),
-            PLAY: (410, 14, 48, 46),
-            RESULT: (1084, 14, 48, 46),
+            MENU: (391, 633, 42, 42),
+            PLAY: (413, 17, 42, 42),
+            RESULT: (1087, 17, 42, 42),
         }[self.state]
         self.music_btn.rect = pygame.Rect(rect)
         self.music_btn.enabled = self.music.available
         self.music_btn.label = ""
+        self.music_btn.kind = "primary" if self.music.enabled else "ghost"
 
     def toggle_music(self):
         if not self.music.available:
@@ -2512,7 +2581,8 @@ class Game:
             self.go_menu()
 
     def update(self, dt, real=None):
-        self.sync_mobile_angle_input()
+        self._sync_web_resolution()
+        self.sync_mobile_text_input()
         self.clock_t += dt
         if self.graphics_quality != "bajo":
             self.scroll += dt * 16
@@ -3465,30 +3535,34 @@ class Game:
     def draw(self):
         self._place_music_button()
         {MENU: self.draw_menu, PLAY: self.draw_play, RESULT: self.draw_result}[self.state]()
-        self.music_btn.draw(self.ui, self.screen)
         icon_color = C_GOOD if self.music.enabled and self.music.available else C_MUTED
+        button_color = mix((14, 20, 48), icon_color, 0.18 + self.music_btn.hover * 0.18)
         icon_x, icon_y = self.music_btn.rect.center
+        icon_y += int(self.music_btn.pressed)
+        pygame.draw.circle(self.screen, (0, 0, 0), (icon_x, icon_y + 2), 22)
+        pygame.draw.circle(self.screen, button_color, (icon_x, icon_y), 20)
+        pygame.draw.circle(self.screen, icon_color, (icon_x, icon_y), 20, 2)
         pygame.draw.polygon(
             self.screen, icon_color,
-            ((icon_x - 11, icon_y - 4), (icon_x - 6, icon_y - 4),
-             (icon_x + 1, icon_y - 10), (icon_x + 1, icon_y + 10),
-             (icon_x - 6, icon_y + 4), (icon_x - 11, icon_y + 4)),
+            ((icon_x - 9, icon_y - 3), (icon_x - 5, icon_y - 3),
+             (icon_x + 1, icon_y - 8), (icon_x + 1, icon_y + 8),
+             (icon_x - 5, icon_y + 3), (icon_x - 9, icon_y + 3)),
         )
         if self.music.enabled and self.music.available:
             pygame.draw.arc(
                 self.screen, icon_color,
-                pygame.Rect(icon_x - 4, icon_y - 10, 17, 20),
+                pygame.Rect(icon_x - 4, icon_y - 7, 12, 14),
                 -0.95, 0.95, 2,
             )
             pygame.draw.arc(
                 self.screen, icon_color,
-                pygame.Rect(icon_x - 7, icon_y - 14, 25, 28),
+                pygame.Rect(icon_x - 7, icon_y - 10, 18, 20),
                 -0.85, 0.85, 2,
             )
         else:
             pygame.draw.line(
                 self.screen, C_WARN,
-                (icon_x - 7, icon_y + 9), (icon_x + 13, icon_y - 10), 3,
+                (icon_x - 8, icon_y + 8), (icon_x + 9, icon_y - 9), 2,
             )
         if self.music_note:
             if self.state == MENU:
