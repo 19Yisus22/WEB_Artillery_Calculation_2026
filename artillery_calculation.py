@@ -1255,6 +1255,18 @@ class TextInput:
         pygame.K_KP8: "8",
         pygame.K_KP9: "9",
     }
+    KEYPAD_SCANCODE_DIGITS = {
+        pygame.KSCAN_KP0: "0",
+        pygame.KSCAN_KP1: "1",
+        pygame.KSCAN_KP2: "2",
+        pygame.KSCAN_KP3: "3",
+        pygame.KSCAN_KP4: "4",
+        pygame.KSCAN_KP5: "5",
+        pygame.KSCAN_KP6: "6",
+        pygame.KSCAN_KP7: "7",
+        pygame.KSCAN_KP8: "8",
+        pygame.KSCAN_KP9: "9",
+    }
 
     def __init__(self, rect, placeholder, max_len, numeric, sticky=False, suffix=""):
         self.rect = pygame.Rect(rect)
@@ -1299,8 +1311,17 @@ class TextInput:
             self._insert(text)
         elif e.type == pygame.KEYDOWN:
             keypad_text = self.KEYPAD_DIGITS.get(e.key)
-            if keypad_text is None and self.numeric and e.key == pygame.K_KP_PERIOD:
-                keypad_text = "."
+            if keypad_text is None and self.numeric:
+                keypad_text = self.KEYPAD_SCANCODE_DIGITS.get(getattr(e, "scancode", None))
+            if keypad_text is None and self.numeric:
+                key_text = getattr(e, "unicode", "") or ""
+                if key_text.isascii() and (key_text.isdigit() or key_text in ".,"):
+                    keypad_text = key_text
+                elif (
+                    e.key == pygame.K_KP_PERIOD
+                    or getattr(e, "scancode", None) == pygame.KSCAN_KP_PERIOD
+                ):
+                    keypad_text = "."
             self.pending_keypad_text = keypad_text or ""
             if keypad_text:
                 self._insert(keypad_text)
