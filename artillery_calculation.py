@@ -2101,12 +2101,12 @@ class Game:
                 self.angle_keypad[key] = button
         self.angle_keypad["ENTER"] = Button(
             (0, 0, 174, 36),
-            "ENTER · DISPARAR",
+            "DISPARAR",
             "fire",
             style="small_b",
         )
-        self.angle_keypad_pin_btn = Button((0, 0, 36, 22), "FIJ", "ghost", style="tiny_b")
-        self.angle_keypad_visibility_btn = Button((0, 0, 36, 22), "OCU", "ghost", style="tiny_b")
+        self.angle_keypad_pin_btn = Button((0, 0, 32, 24), "", "ghost", style="tiny_b")
+        self.angle_keypad_visibility_btn = Button((0, 0, 42, 42), "", "ghost", style="small_b")
         self._layout_angle_keypad()
         self.bulb = BulbButton((a.x + 14, a.y + 98))
         self.new_btn = Button((a.x + 212, a.y + 106, 168, 38), "Nueva Ecuación", "ghost", style="btn_s")
@@ -2143,9 +2143,17 @@ class Game:
         else:
             rect = (1087, 17, 42, 42)
         self.music_btn.rect = pygame.Rect(rect)
+        if self.state == PLAY:
+            self.angle_keypad_visibility_btn.rect.topleft = (
+                self.music_btn.rect.right + 8,
+                self.music_btn.rect.y,
+            )
         self.music_btn.enabled = self.music.available
         self.music_btn.label = ""
         self.music_btn.kind = "primary" if self.music.enabled else "ghost"
+        self.angle_keypad_visibility_btn.kind = (
+            "primary" if self.angle_keypad_visible else "ghost"
+        )
 
     def toggle_music(self):
         if not self.music.available:
@@ -2651,17 +2659,15 @@ class Game:
             toggle_keypad = self.angle_keypad_visibility_btn.handle(e)
             if pin_keypad:
                 self.angle_keypad_pinned = not self.angle_keypad_pinned
-                self.angle_keypad_pin_btn.label = "LIB" if self.angle_keypad_pinned else "FIJ"
                 return
             if toggle_keypad:
                 self.angle_keypad_visible = not self.angle_keypad_visible
-                if self.angle_keypad_visible:
-                    self._move_angle_keypad(
-                        self.angle_keypad_rect.x,
-                        self.angle_keypad_rect.y,
-                    )
-                self.angle_keypad_visibility_btn.label = (
-                    "OCU" if self.angle_keypad_visible else "VER"
+                self.angle_keypad_rect.w = (
+                    226 if self.angle_keypad_visible else 72
+                )
+                self._move_angle_keypad(
+                    self.angle_keypad_rect.x,
+                    self.angle_keypad_rect.y,
                 )
                 return
             before = self.angle_input.text
@@ -2762,6 +2768,8 @@ class Game:
         self.next_btn.enabled = self.phase == SOLVED
         for b in (self.fire_btn, self.new_btn, self.next_btn):
             b.update(dt, mouse)
+        self.angle_keypad_pin_btn.update(dt, mouse)
+        self.angle_keypad_visibility_btn.update(dt, mouse)
         for button in self.angle_keypad.values():
             button.update(dt, mouse)
         self.bulb.update(dt, mouse, aim and (self.hint_ready() or self.hints > 0), self.hint_ready(),
@@ -2849,8 +2857,10 @@ class Game:
             for col, key in enumerate(keys):
                 self.angle_keypad[key].rect.topleft = (x + 26 + col * 60, y + 34 + row * 42)
         self.angle_keypad["ENTER"].rect.topleft = (x + 26, y + 202)
-        self.angle_keypad_pin_btn.rect.topleft = (x + self.angle_keypad_rect.w - 88, y + 5)
-        self.angle_keypad_visibility_btn.rect.topleft = (x + self.angle_keypad_rect.w - 48, y + 5)
+        pin_x = x + (self.angle_keypad_rect.w - self.angle_keypad_pin_btn.rect.w) // 2
+        if self.angle_keypad_visible:
+            pin_x = x + self.angle_keypad_rect.w - self.angle_keypad_pin_btn.rect.w - 5
+        self.angle_keypad_pin_btn.rect.topleft = (pin_x, y + 5)
 
     def _keypad_finger_pos(self, event):
         surface = self.output_surface or pygame.display.get_surface()
@@ -2868,7 +2878,8 @@ class Game:
     def _move_angle_keypad(self, x, y):
         rect = self.angle_keypad_rect
         height = rect.h if self.angle_keypad_visible else 34
-        rect.x = clamp(x, 0, WIDTH - rect.w)
+        width = rect.w
+        rect.x = clamp(x, 0, WIDTH - width)
         rect.y = clamp(y, 0, HEIGHT - height)
         self._layout_angle_keypad()
 
@@ -2928,7 +2939,7 @@ class Game:
         cursor = pygame.SYSTEM_CURSOR_ARROW
         keypad_header = pygame.Rect(
             self.angle_keypad_rect.x, self.angle_keypad_rect.y,
-            self.angle_keypad_rect.w, 30,
+            self.angle_keypad_rect.w, 34 if not self.angle_keypad_visible else 30,
         )
         if (self.state == PLAY and self.phase == AIM and not self.angle_keypad_pinned
                 and keypad_header.collidepoint(mouse)
@@ -2971,21 +2982,37 @@ class Game:
 
     def draw_angle_keypad(self, s):
         rect = self.angle_keypad_rect
+        panel_size = rect.size if self.angle_keypad_visible else (rect.w, 34)
         s.blit(
-            self.ui.rounded(rect.size, 14, (9, 15, 36, 248), (65, 92, 170), 1),
+            self.ui.rounded(panel_size, 14, (9, 15, 36, 248), (65, 92, 170), 1),
             rect.topleft,
         )
-        self.ui.text(s, "TECLADO", "tiny_b", C_MUTED, (rect.x + 12, rect.y + 9))
-        pygame.draw.line(
-            s, (60, 74, 140), (rect.x + 12, rect.y + 27),
-            (rect.right - 12, rect.y + 27), 1,
-        )
+        if self.angle_keypad_visible:
+            self.ui.text(s, "TECLADO", "tiny_b", C_MUTED, (rect.x + 12, rect.y + 9))
+            pygame.draw.line(
+                s, (60, 74, 140), (rect.x + 12, rect.y + 27),
+                (rect.right - 12, rect.y + 27), 1,
+            )
         self.angle_keypad_pin_btn.draw(self.ui, s)
-        self.angle_keypad_visibility_btn.draw(self.ui, s)
+        self._draw_keypad_pin_icon(s)
         if not self.angle_keypad_visible:
             return
         for button in self.angle_keypad.values():
             button.draw(self.ui, s)
+
+    def _draw_keypad_pin_icon(self, dst):
+        cx, cy = self.angle_keypad_pin_btn.rect.center
+        color = C_ACCENT if self.angle_keypad_pinned else C_MUTED
+        if self.angle_keypad_pinned:
+            pygame.draw.circle(dst, color, (cx, cy - 5), 4, 2)
+            pygame.draw.line(dst, color, (cx, cy - 1), (cx, cy + 6), 2)
+            pygame.draw.line(dst, color, (cx - 5, cy + 1), (cx + 5, cy + 1), 2)
+            pygame.draw.line(dst, color, (cx, cy + 6), (cx - 3, cy + 10), 2)
+        else:
+            pygame.draw.circle(dst, color, (cx - 2, cy - 5), 4, 2)
+            pygame.draw.line(dst, color, (cx, cy - 2), (cx + 5, cy + 4), 2)
+            pygame.draw.line(dst, color, (cx + 2, cy - 1), (cx + 8, cy - 6), 2)
+            pygame.draw.line(dst, color, (cx + 5, cy + 4), (cx + 7, cy + 10), 2)
 
     def chip(self, dst, right, y, label, value, color):
         ui = self.ui
@@ -3812,6 +3839,9 @@ class Game:
                 self.screen, C_WARN,
                 (icon_x - 8, icon_y + 8), (icon_x + 9, icon_y - 9), 2,
             )
+        if self.state == PLAY and self.phase == AIM:
+            self.angle_keypad_visibility_btn.draw(self.ui, self.screen)
+            self._draw_keypad_visibility_icon()
         if self.music_note:
             if self.state == MENU:
                 self.ui.text(
@@ -3833,6 +3863,24 @@ class Game:
             self.output_surface.fill(C_BG)
             self.output_surface.blit(self.web_output_frame, self.web_offset)
         pygame.display.flip()
+
+    def _draw_keypad_visibility_icon(self):
+        rect = self.angle_keypad_visibility_btn.rect
+        cx, cy = rect.center
+        color = C_TEXT if self.angle_keypad_visible else C_MUTED
+        keyboard = pygame.Rect(cx - 10, cy - 7, 20, 14)
+        pygame.draw.rect(self.screen, color, keyboard, 2, border_radius=2)
+        for row in range(2):
+            for col in range(3):
+                x = cx - 6 + col * 6
+                y = cy - 3 + row * 5
+                pygame.draw.line(self.screen, color, (x, y), (x + 2, y), 1)
+        pygame.draw.line(self.screen, color, (cx - 5, cy + 4), (cx + 5, cy + 4), 1)
+        if not self.angle_keypad_visible:
+            pygame.draw.line(
+                self.screen, C_WARN,
+                (cx - 11, cy + 11), (cx + 11, cy - 11), 2,
+            )
 
     async def run(self):
         if sys.platform != "emscripten" and self.music.enabled:
