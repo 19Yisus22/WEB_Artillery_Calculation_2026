@@ -1866,6 +1866,9 @@ class Game:
         pygame.display.set_caption(TITLE)
         self.fullscreen = True
         self.mobile_angle_input = None
+        self.touch_finger_id = None
+        self.touch_last_pos = None
+        self.last_touch_event_ms = -1000
         if sys.platform == "emscripten":
             import platform
 
@@ -2620,7 +2623,16 @@ class Game:
         if e.type == pygame.QUIT or e.type == getattr(pygame, "WINDOWCLOSE", -1):
             self.running = False
             return
-        if hasattr(e, "pos"):
+        if e.type in (pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP):
+            e = self._touch_mouse_event(e)
+            if e is None:
+                return
+        elif (
+            e.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION)
+            and pygame.time.get_ticks() - self.last_touch_event_ms < 500
+        ):
+            return
+        if hasattr(e, "pos") and not getattr(e, "logical", False):
             if self.output_surface is not None:
                 pos = (
                     int((e.pos[0] - self.web_offset[0]) / self.web_scale),
@@ -2958,6 +2970,48 @@ class Game:
                 int((y - self.web_offset[1]) / self.web_scale),
             )
         return int(x - self.ox), int(y - self.oy)
+
+    def _touch_mouse_event(self, event):
+        now = pygame.time.get_ticks()
+        if event.type == pygame.FINGERDOWN:
+            if self.touch_finger_id is not None:
+                return None
+            pos = self._keypad_finger_pos(event)
+            if pos is None:
+                return None
+            self.touch_finger_id = event.finger_id
+            self.touch_last_pos = pos
+            self.last_touch_event_ms = now
+            return pygame.event.Event(
+                pygame.MOUSEBUTTONDOWN,
+                {"pos": pos, "button": 1, "logical": True},
+            )
+        if event.finger_id != self.touch_finger_id:
+            return None
+
+        pos = self._keypad_finger_pos(event)
+        if pos is None:
+            return None
+        self.last_touch_event_ms = now
+        if event.type == pygame.FINGERMOTION:
+            previous = self.touch_last_pos
+            self.touch_last_pos = pos
+            return pygame.event.Event(
+                pygame.MOUSEMOTION,
+                {
+                    "pos": pos,
+                    "rel": (pos[0] - previous[0], pos[1] - previous[1]),
+                    "buttons": (1, 0, 0),
+                    "logical": True,
+                },
+            )
+
+        self.touch_finger_id = None
+        self.touch_last_pos = None
+        return pygame.event.Event(
+            pygame.MOUSEBUTTONUP,
+            {"pos": pos, "button": 1, "logical": True},
+        )
 
     def _move_angle_keypad(self, x, y):
         rect = self.angle_keypad_rect

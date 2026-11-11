@@ -430,6 +430,7 @@ body.simulated-landscape #orientation-gate {
   const progressPercent = document.getElementById("loader-progress-percent");
   const orientationGate = document.getElementById("orientation-gate");
   const rotateButton = document.getElementById("rotate-screen");
+  const orientationStatus = document.getElementById("orientation-status");
   const mobileAngleInput = document.getElementById("mobile-angle-input");
   const portrait = window.matchMedia("(orientation: portrait)");
   const coarsePointer = window.matchMedia("(pointer: coarse)");
@@ -547,6 +548,14 @@ body.simulated-landscape #orientation-gate {
     mobileAngleInput.style.display = "none";
     if (document.activeElement === mobileAngleInput) mobileAngleInput.blur();
   };
+  const simulateLandscape = () => {
+    simulatedLandscape = isMobilePortrait();
+    orientationStatus.textContent = simulatedLandscape
+      ? "El dispositivo no permite girar automáticamente; se muestra el juego en horizontal."
+      : "Juego en horizontal activado.";
+    updateOrientation();
+    fitCanvas();
+  };
   canvas.addEventListener("click", (event) => {
     const rect = canvas.getBoundingClientRect();
     const x = simulatedLandscape && isMobilePortrait()
@@ -586,9 +595,21 @@ body.simulated-landscape #orientation-gate {
   });
   mobileAngleInput.addEventListener("input", positionMobileAngleInput);
   rotateButton.addEventListener("click", () => {
-    simulatedLandscape = true;
-    updateOrientation();
-    fitCanvas();
+    const orientation = window.screen.orientation;
+    if (orientation && typeof orientation.lock === "function") {
+      try {
+        orientation.lock("landscape").then(() => {
+          simulatedLandscape = isMobilePortrait();
+          orientationStatus.textContent = "Juego en horizontal activado.";
+          updateOrientation();
+          fitCanvas();
+        }).catch(simulateLandscape);
+      } catch {
+        simulateLandscape();
+      }
+      return;
+    }
+    simulateLandscape();
   });
   window.addEventListener("resize", fitCanvas, { passive: true });
   window.addEventListener("orientationchange", () => {
