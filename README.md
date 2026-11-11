@@ -149,6 +149,7 @@ Si recoges un globo durante un disparo fallido, se evita la penalización de tie
 | Pedir pista (bombilla) | Icono 💡 | `Tab` |
 | Acelerar bala en vuelo (×4) | Haz clic mientras viaja | — |
 | Silenciar o activar la música | Botón circular con icono de altavoz |
+| Volver al inicio durante la partida | Icono de casa junto al audio |
 | Siguiente ecuación | Botón | `Enter` (tras acertar) |
 | Volver al menú | Botón **Menú** | `Esc` |
 | Guardar puntuación | Botón **Guardar** | `Enter` |

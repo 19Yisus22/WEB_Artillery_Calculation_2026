@@ -2115,6 +2115,7 @@ class Game:
         self.save_btn = Button((RES_SAVE.x + 372, RES_SAVE.y + 48, 200, 50), "Guardar", "good")
         self.again_btn = Button((64, 624, 250, 56), "Jugar de Nuevo", "primary")
         self.menu_btn = Button((330, 624, 250, 56), "Menú", "ghost")
+        self.home_btn = Button((0, 0, 42, 42), "", "ghost", style="small_b")
         self.music_btn = Button((0, 0, 42, 42), "", "ghost", style="small_b")
 
     def _place_music_button(self):
@@ -2144,6 +2145,10 @@ class Game:
             rect = (1087, 17, 42, 42)
         self.music_btn.rect = pygame.Rect(rect)
         if self.state == PLAY:
+            self.home_btn.rect.topleft = (
+                self.music_btn.rect.x - self.home_btn.rect.w - 8,
+                self.music_btn.rect.y,
+            )
             self.angle_keypad_visibility_btn.rect.topleft = (
                 self.music_btn.rect.right + 8,
                 self.music_btn.rect.y,
@@ -2554,6 +2559,9 @@ class Game:
                 pos = (e.pos[0] - self.ox, e.pos[1] - self.oy)
             e = pygame.event.Event(e.type, {**e.dict, "pos": pos})
         self._place_music_button()
+        if self.state == PLAY and self.home_btn.handle(e):
+            self.go_menu()
+            return
         if self.music_btn.handle(e):
             self.toggle_music()
             return
@@ -2728,6 +2736,8 @@ class Game:
         mouse = self.mouse_pos()
         self._place_music_button()
         self.music_btn.update(dt, mouse)
+        if self.state == PLAY:
+            self.home_btn.update(dt, mouse)
         if self.state == MENU:
             self.menu_input.update(dt)
             for button in self._menu_buttons():
@@ -2839,8 +2849,8 @@ class Game:
         if self.state == RESULT:
             return [self.save_btn, self.again_btn, self.menu_btn, self.music_btn]
         if self.phase == SOLVED:
-            return [self.next_btn, self.new_btn, self.music_btn]
-        buttons = [self.fire_btn, self.bulb, self.new_btn, self.music_btn]
+            return [self.next_btn, self.new_btn, self.music_btn, self.home_btn]
+        buttons = [self.fire_btn, self.bulb, self.new_btn, self.music_btn, self.home_btn]
         if self.phase == AIM:
             buttons.extend((self.angle_keypad_pin_btn, self.angle_keypad_visibility_btn))
             if self.angle_keypad_visible:
@@ -3003,16 +3013,13 @@ class Game:
     def _draw_keypad_pin_icon(self, dst):
         cx, cy = self.angle_keypad_pin_btn.rect.center
         color = C_ACCENT if self.angle_keypad_pinned else C_MUTED
-        if self.angle_keypad_pinned:
-            pygame.draw.circle(dst, color, (cx, cy - 5), 4, 2)
-            pygame.draw.line(dst, color, (cx, cy - 1), (cx, cy + 6), 2)
-            pygame.draw.line(dst, color, (cx - 5, cy + 1), (cx + 5, cy + 1), 2)
-            pygame.draw.line(dst, color, (cx, cy + 6), (cx - 3, cy + 10), 2)
-        else:
-            pygame.draw.circle(dst, color, (cx - 2, cy - 5), 4, 2)
-            pygame.draw.line(dst, color, (cx, cy - 2), (cx + 5, cy + 4), 2)
-            pygame.draw.line(dst, color, (cx + 2, cy - 1), (cx + 8, cy - 6), 2)
-            pygame.draw.line(dst, color, (cx + 5, cy + 4), (cx + 7, cy + 10), 2)
+        pygame.draw.circle(dst, color, (cx, cy - 7), 3)
+        pygame.draw.line(dst, color, (cx, cy - 4), (cx, cy + 2), 2)
+        pygame.draw.line(dst, color, (cx - 5, cy - 2), (cx + 5, cy - 2), 2)
+        pygame.draw.polygon(
+            dst, color,
+            ((cx - 3, cy + 1), (cx + 3, cy + 1), (cx, cy + 9)),
+        )
 
     def chip(self, dst, right, y, label, value, color):
         ui = self.ui
@@ -3842,6 +3849,9 @@ class Game:
         if self.state == PLAY and self.phase == AIM:
             self.angle_keypad_visibility_btn.draw(self.ui, self.screen)
             self._draw_keypad_visibility_icon()
+        if self.state == PLAY:
+            self.home_btn.draw(self.ui, self.screen)
+            self._draw_home_icon()
         if self.music_note:
             if self.state == MENU:
                 self.ui.text(
@@ -3868,19 +3878,36 @@ class Game:
         rect = self.angle_keypad_visibility_btn.rect
         cx, cy = rect.center
         color = C_TEXT if self.angle_keypad_visible else C_MUTED
-        keyboard = pygame.Rect(cx - 10, cy - 7, 20, 14)
-        pygame.draw.rect(self.screen, color, keyboard, 2, border_radius=2)
-        for row in range(2):
-            for col in range(3):
-                x = cx - 6 + col * 6
-                y = cy - 3 + row * 5
-                pygame.draw.line(self.screen, color, (x, y), (x + 2, y), 1)
-        pygame.draw.line(self.screen, color, (cx - 5, cy + 4), (cx + 5, cy + 4), 1)
+        keyboard = pygame.Rect(cx - 12, cy - 10, 24, 20)
+        pygame.draw.rect(self.screen, color, keyboard, 2, border_radius=3)
+        for row in range(3):
+            for col in range(4):
+                key = pygame.Rect(cx - 9 + col * 5, cy - 7 + row * 5, 3, 2)
+                pygame.draw.rect(self.screen, color, key, border_radius=1)
+        pygame.draw.line(
+            self.screen, color, (cx - 5, cy + 6), (cx + 5, cy + 6), 2,
+        )
         if not self.angle_keypad_visible:
             pygame.draw.line(
                 self.screen, C_WARN,
                 (cx - 11, cy + 11), (cx + 11, cy - 11), 2,
             )
+
+    def _draw_home_icon(self):
+        cx, cy = self.home_btn.rect.center
+        color = C_TEXT
+        pygame.draw.polygon(
+            self.screen, color,
+            ((cx - 11, cy - 1), (cx, cy - 11), (cx + 11, cy - 1)),
+            2,
+        )
+        pygame.draw.lines(
+            self.screen, color, False,
+            ((cx - 8, cy - 3), (cx - 8, cy + 9), (cx + 8, cy + 9),
+             (cx + 8, cy - 3)),
+            2,
+        )
+        pygame.draw.rect(self.screen, color, (cx - 2, cy + 3, 4, 6), 1)
 
     async def run(self):
         if sys.platform != "emscripten" and self.music.enabled:
