@@ -2,6 +2,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import re
 from pathlib import Path
 
 
@@ -14,10 +15,11 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 body {
   margin: 0;
-  background: #070a18;
+  background: #070a18 !important;
 }
 #canvas.emscripten {
   position: fixed !important;
@@ -29,7 +31,70 @@ body {
   max-height: 100vh !important;
   transform: translate(-50%, -50%);
   touch-action: none;
+  user-select: none;
   -webkit-tap-highlight-color: transparent;
+}
+#orientation-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: none;
+  place-items: center;
+  padding: 24px;
+  box-sizing: border-box;
+  background: #070a18;
+  color: #e9eeff;
+  font: 15px/1.5 system-ui, sans-serif;
+  text-align: center;
+}
+body.needs-landscape #orientation-gate {
+  display: grid;
+}
+#orientation-gate .orientation-card {
+  width: min(100%, 380px);
+  padding: 28px 24px;
+  border: 1px solid rgba(56, 224, 255, 0.28);
+  border-radius: 18px;
+  background: linear-gradient(155deg, #111d37, #080e1e);
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.48);
+}
+#orientation-gate .orientation-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 16px;
+  color: #38e0ff;
+  animation: rotate-phone 1.8s ease-in-out infinite alternate;
+}
+#orientation-gate h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+#orientation-gate p {
+  margin: 8px 0;
+  color: #aab6d9;
+}
+#orientation-status {
+  min-height: 3em;
+  font-size: 13px;
+}
+#orientation-gate button {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 8px;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(100deg, #38e0ff, #76f0d0);
+  color: #071321;
+  font: 700 15px/1.2 system-ui, sans-serif;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+#orientation-gate button:focus-visible {
+  outline: 3px solid #ffb042;
+  outline-offset: 3px;
+}
+@keyframes rotate-phone {
+  to { transform: rotate(90deg); }
 }
 #game-loader {
   position: fixed;
@@ -161,12 +226,12 @@ body {
 }
 #game-loader .loader-track span {
   display: block;
-  width: 30%;
+  width: 0;
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, #38e0ff, #ffb042);
   box-shadow: 0 0 14px rgba(56, 224, 255, 0.7);
-  animation: loader-progress 2.2s ease-in-out infinite;
+  transition: width 180ms ease-out;
 }
 #game-loader .loader-status {
   display: flex;
@@ -177,14 +242,16 @@ body {
   font: 9px/1.5 ui-monospace, monospace;
   letter-spacing: 0.12em;
 }
+#game-loader #loader-progress-percent {
+  min-width: 3.5em;
+  color: #38e0ff;
+  font-weight: 700;
+  text-align: right;
+}
 body.game-ready #game-loader {
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
-}
-@keyframes loader-progress {
-  0% { transform: translateX(-120%); }
-  100% { transform: translateX(400%); }
 }
 @media (max-width: 480px) {
   #game-loader {
@@ -202,6 +269,11 @@ body.game-ready #game-loader {
   }
   #game-loader .loader-online {
     font-size: 8px;
+  }
+}
+@media (orientation: portrait) and (pointer: coarse) {
+  #orientation-gate {
+    display: grid;
   }
 }
 @media (max-height: 520px) {
@@ -265,14 +337,105 @@ body.game-ready #game-loader {
     <p class="loader-kicker">SISTEMA DE CONTROL · NEWTON–RAPHSON</p>
     <h1>Calculando trayectoria</h1>
     <p class="loader-copy">Calibrando el cañón y preparando el campo de tiro...</p>
-    <div class="loader-track" aria-hidden="true"><span></span></div>
-    <div class="loader-status"><span>CALIBRANDO ARTILLERÍA</span><span>UN MOMENTO</span></div>
+    <div class="loader-track" role="progressbar" aria-label="Progreso estimado de carga" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <span id="loader-progress-bar"></span>
+    </div>
+    <div class="loader-status">
+      <span id="loader-progress-status">DESCARGANDO EL JUEGO</span>
+      <span id="loader-progress-percent" aria-hidden="true">0%</span>
+    </div>
+  </div>
+</div>
+<div id="orientation-gate" role="dialog" aria-modal="true" aria-labelledby="orientation-title" aria-hidden="true">
+  <div class="orientation-card">
+    <svg class="orientation-icon" viewBox="0 0 64 64" aria-hidden="true">
+      <rect x="21" y="7" width="22" height="50" rx="4" fill="none" stroke="currentColor" stroke-width="3" />
+      <circle cx="32" cy="49" r="1.8" fill="currentColor" />
+    </svg>
+    <h2 id="orientation-title">Gira tu teléfono</h2>
+    <p>Artillery Calculation se juega en pantalla horizontal.</p>
+    <p id="orientation-status" aria-live="polite">Intentando activar la orientación horizontal. Si no gira, usa el botón o gira el móvil manualmente.</p>
+    <button id="rotate-screen" type="button">Intentar giro automático</button>
   </div>
 </div>
 <script>
 (() => {
   const canvas = document.getElementById("canvas");
+  if (!canvas) return;
+  const loader = document.getElementById("game-loader");
+  const progressBar = document.getElementById("loader-progress-bar");
+  const progressTrack = loader.querySelector('[role="progressbar"]');
+  const progressStatus = document.getElementById("loader-progress-status");
+  const progressPercent = document.getElementById("loader-progress-percent");
+  const orientationGate = document.getElementById("orientation-gate");
+  const orientationStatus = document.getElementById("orientation-status");
+  const rotateButton = document.getElementById("rotate-screen");
+  const portrait = window.matchMedia("(orientation: portrait)");
+  const coarsePointer = window.matchMedia("(pointer: coarse)");
+  const loadingStartedAt = performance.now();
   let resizeFrame = 0;
+  let resizeObserver;
+  let downloadCompletedAt = null;
+  let displayedProgress = 0;
+
+  const updateLoadingProgress = () => {
+    if (document.body.classList.contains("game-ready")) {
+      displayedProgress = 100;
+      progressStatus.textContent = "JUEGO LISTO";
+      progressPercent.textContent = "100%";
+      progressTrack.setAttribute("aria-valuenow", "100");
+      progressBar.style.width = "100%";
+      return;
+    }
+
+    const download = document.getElementById("progress");
+    const total = download ? Number(download.max) : 0;
+    const current = download ? Number(download.value) : 0;
+    const fraction = total > 0 ? Math.min(1, Math.max(0, current / total)) : 0;
+    const now = performance.now();
+    if (fraction >= 1 && downloadCompletedAt === null) downloadCompletedAt = now;
+    const downloadProgress = Math.floor(fraction * 80);
+    const elapsedEstimate = Math.min(95, Math.floor((now - loadingStartedAt) / 70));
+    const preparationProgress = downloadCompletedAt === null
+      ? elapsedEstimate
+      : Math.min(99, 80 + Math.floor((now - downloadCompletedAt) / 800));
+    const progress = Math.max(downloadProgress, preparationProgress);
+    progressStatus.textContent = progress >= 75
+      ? "PREPARANDO EL JUEGO"
+      : "CARGANDO EL MOTOR";
+    displayedProgress = Math.max(displayedProgress, progress);
+    progressPercent.textContent = `${displayedProgress}%`;
+    progressTrack.setAttribute("aria-valuenow", String(displayedProgress));
+    progressBar.style.width = `${displayedProgress}%`;
+  };
+
+  const isMobilePortrait = () => portrait.matches && coarsePointer.matches;
+  const requestLandscape = (enterFullscreen = false) => {
+    let fullscreen = Promise.resolve();
+    if (enterFullscreen && !document.fullscreenElement && document.documentElement.requestFullscreen) {
+      fullscreen = document.documentElement.requestFullscreen().catch(() => {});
+    }
+    return fullscreen.then(() => {
+      const orientation = window.screen && window.screen.orientation;
+      if (!orientation || typeof orientation.lock !== "function") return false;
+      return orientation.lock("landscape").then(() => true).catch(() => false);
+    }).then((locked) => {
+      if (!locked && orientationStatus) {
+        orientationStatus.textContent = "Este navegador no permite girar la pantalla automáticamente. Activa el giro del móvil y colócalo horizontalmente.";
+      }
+      return locked;
+    });
+  };
+  const updateOrientation = () => {
+    const blocked = isMobilePortrait();
+    document.body.classList.toggle("needs-landscape", blocked);
+    if (!blocked && orientationGate.contains(document.activeElement)) {
+      document.activeElement.blur();
+    }
+    orientationGate.setAttribute("aria-hidden", String(!blocked));
+    if (blocked) requestLandscape();
+  };
+
   const fitCanvas = () => {
     cancelAnimationFrame(resizeFrame);
     resizeFrame = requestAnimationFrame(() => {
@@ -285,12 +448,35 @@ body.game-ready #game-loader {
       canvas.style.setProperty("height", `${Math.floor(canvas.height * scale)}px`, "important");
     });
   };
+  rotateButton.addEventListener("click", () => requestLandscape(true));
   window.addEventListener("resize", fitCanvas, { passive: true });
-  window.addEventListener("orientationchange", fitCanvas, { passive: true });
+  window.addEventListener("orientationchange", () => {
+    fitCanvas();
+    updateOrientation();
+  }, { passive: true });
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", fitCanvas, { passive: true });
   }
+  if (window.ResizeObserver) {
+    resizeObserver = new ResizeObserver(fitCanvas);
+    resizeObserver.observe(canvas);
+  } else if (window.MutationObserver) {
+    new MutationObserver(fitCanvas).observe(canvas, {
+      attributes: true,
+      attributeFilter: ["width", "height"],
+    });
+  }
+  [portrait, coarsePointer].forEach((query) => {
+    if (query.addEventListener) {
+      query.addEventListener("change", updateOrientation);
+    } else if (query.addListener) {
+      query.addListener(updateOrientation);
+    }
+  });
+  updateLoadingProgress();
+  window.setInterval(updateLoadingProgress, 150);
   fitCanvas();
+  updateOrientation();
 })();
 </script>
 """
@@ -337,6 +523,26 @@ with tempfile.TemporaryDirectory(prefix="artillery-pygbag-") as temp_dir:
 
 output_path = APP_DIR / "build" / "web" / "index.html"
 html = output_path.read_text(encoding="utf-8")
+html = re.sub(r'\s*<meta name="viewport"[^>]*>', "", html, flags=re.IGNORECASE)
+html, head_count = re.subn(
+    r"<head([^>]*)>",
+    r'\g<0>\n<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">',
+    html,
+    count=1,
+    flags=re.IGNORECASE,
+)
+if not head_count:
+    raise RuntimeError(f"No se encontró <head> en la página generada: {output_path}")
+html, runtime_count = re.subn(
+    r"(?=<script[^>]+src=[\"']https://pygame-web\.github\.io/)",
+    '<link rel="preconnect" href="https://pygame-web.github.io" crossorigin>\n'
+    '<link rel="dns-prefetch" href="//pygame-web.github.io">\n',
+    html,
+    count=1,
+    flags=re.IGNORECASE,
+)
+if not runtime_count:
+    raise RuntimeError(f"No se encontró el runtime CDN de Pygbag en: {output_path}")
 closing_body = "</body>"
 if closing_body not in html.lower():
     raise RuntimeError(f"No se encontró </body> en la página generada: {output_path}")

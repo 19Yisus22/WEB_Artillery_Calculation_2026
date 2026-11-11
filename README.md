@@ -148,13 +148,18 @@ Si recoges un globo durante un disparo fallido, se evita la penalización de tie
 | Repetir disparo | Esperar la cuenta atrás de **3 segundos** | — |
 | Pedir pista (bombilla) | Icono 💡 | `Tab` |
 | Acelerar bala en vuelo (×4) | Haz clic mientras viaja | — |
+| Silenciar o activar la música | Icono de altavoz |
 | Siguiente ecuación | Botón | `Enter` (tras acertar) |
 | Volver al menú | Botón **Menú** | `Esc` |
 | Guardar puntuación | Botón **Guardar** | `Enter` |
 
-> 📱 Funciona en **escritorio y móvil**: el lienzo se escala automáticamente al área visible en orientación vertical u horizontal, conservando la proporción del juego para evitar deformaciones.
+> 📱 En móviles, el juego se adapta al área visible y conserva su proporción. Al detectar el teléfono en vertical, solicita el giro horizontal y bloquea la partida con un aviso hasta que la pantalla esté apaisada. El bloqueo automático depende de los permisos y las funciones del navegador; si no está disponible, el aviso permite intentarlo y explica cómo girar el teléfono manualmente. Durante la carga se muestra el progreso de descarga y, después, el avance estimado de preparación hasta que el juego está listo.
 
-El menú principal muestra el **Top 4** de jugadores ordenado por promedio de puntos y un indicador compacto de calidad gráfica en un lateral. Las pestañas permiten consultar las instrucciones y la clasificación completa, o cambiar el ajuste **Bajo / Medio / Alto**. Las instrucciones se pueden desplazar con la rueda del mouse o arrastrando/deslizando dentro del panel. El nivel reduce o activa partículas, brillos, capas animadas y la velocidad de fotogramas según el dispositivo; la preferencia se guarda para la próxima visita. La versión web mantiene un máximo de 30 FPS para limitar el consumo de batería.
+El menú principal muestra el **Top 4** de jugadores ordenado por promedio de puntos y un indicador compacto de calidad gráfica en un lateral. Las pestañas permiten consultar las instrucciones y la clasificación completa, o cambiar el ajuste **Bajo / Medio / Alto**. Las instrucciones se pueden desplazar con la rueda del mouse o arrastrando/deslizando dentro del panel. El nivel reduce o activa partículas, brillos, capas animadas y la velocidad de fotogramas según el dispositivo; la preferencia se guarda para la próxima visita. En la web, el límite es de 30, 45 o 60 FPS según la calidad seleccionada; en escritorio es de 60 FPS.
+
+La banda sonora electrónica suave se sintetiza localmente con variaciones aleatorias de tempo, armonía y melodía, y se repite con una transición suave. En navegadores comienza después de la primera interacción, por las restricciones de reproducción automática; se genera por bloques para mantener fluido el juego y, en escritorio, se prepara en segundo plano para no retrasar el menú. El icono de altavoz permite activar o detener la música inmediatamente desde el menú, la partida y los resultados. La preferencia se guarda en el dispositivo.
+
+Los efectos de impacto se preparan al disparar y suenan en el mismo instante en que termina la trayectoria: tienen tonos diferentes para diana, blanco tocado, casi acierto y fallo lejano. El efecto de casi acierto se activa cuando la bala cae dentro del margen de proximidad del objetivo.
 
 ---
 

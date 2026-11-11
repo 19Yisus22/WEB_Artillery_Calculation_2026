@@ -1,11 +1,13 @@
 from __future__ import annotations
 import asyncio
+from array import array
 import json
 import math
 import os
 import random
 import re
 import sys
+import threading
 import time
 from pathlib import Path
 from datetime import datetime
@@ -96,11 +98,11 @@ RES_RANK = pygame.Rect(620, 240, 596, 360)
 GRAPHICS_PROFILES = {
     "bajo": {
         "particles": 0.25, "max_particles": 80, "glow": False,
-        "layers": 1, "stars_step": 3, "clouds": 0, "fps": (60, 60),
+        "layers": 1, "stars_step": 3, "clouds": 0, "fps": (60, 30),
     },
     "medio": {
         "particles": 0.60, "max_particles": 220, "glow": True,
-        "layers": 2, "stars_step": 1, "clouds": 3, "fps": (60, 60),
+        "layers": 2, "stars_step": 1, "clouds": 3, "fps": (60, 45),
     },
     "alto": {
         "particles": 1.0, "max_particles": 520, "glow": True,
@@ -722,6 +724,23 @@ class GameSettings:
         quality = data.get("calidad_grafica") if isinstance(data, dict) else None
         return quality if isinstance(quality, str) and quality in GRAPHICS_PROFILES else "medio"
 
+    def load_music_enabled(self):
+        if sys.platform == "emscripten":
+            import platform
+
+            for item in str(platform.window.document.cookie).split(";"):
+                key, separator, value = item.strip().partition("=")
+                if separator and key == "artillery_music":
+                    return value != "off"
+            return True
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return True
+        except (OSError, ValueError):
+            return True
+        return data.get("musica_activada", True) is not False if isinstance(data, dict) else True
+
     def save_quality(self, quality):
         if not isinstance(quality, str) or quality not in GRAPHICS_PROFILES:
             raise ValueError(f"Nivel gráfico no válido: {quality}")
@@ -736,14 +755,315 @@ class GameSettings:
                 if separator and key == "artillery_graphics_quality" and value == quality:
                     return True
             return False
+        return self._save_desktop_settings("calidad_grafica", quality)
+
+    def save_music_enabled(self, enabled):
+        if sys.platform == "emscripten":
+            import platform
+
+            value = "on" if enabled else "off"
+            platform.window.document.cookie = (
+                f"artillery_music={value}; path=/; max-age=31536000; samesite=lax"
+            )
+            for item in str(platform.window.document.cookie).split(";"):
+                key, separator, stored = item.strip().partition("=")
+                if separator and key == "artillery_music" and stored == value:
+                    return True
+            return False
+        return self._save_desktop_settings("musica_activada", bool(enabled))
+
+    def _save_desktop_settings(self, key, value):
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            data = {}
+        except (OSError, ValueError):
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        data[key] = value
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.path.with_suffix(".tmp")
-            tmp.write_text(json.dumps({"calidad_grafica": quality}, indent=2), encoding="utf-8")
+            tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
             tmp.replace(self.path)
         except OSError:
             return False
         return True
+
+
+class BackgroundMusic:
+    SAMPLE_RATE = 22050
+    CHORDS = (
+        (48, 55, 59, 64),
+        (45, 52, 55, 59),
+        (41, 48, 52, 57),
+        (43, 50, 54, 57),
+        (38, 45, 48, 53),
+        (40, 47, 50, 55),
+    )
+    PROGRESSIONS = (
+        (0, 1, 4, 3),
+        (4, 3, 0, 1),
+        (0, 3, 4, 1),
+        (1, 4, 3, 0),
+        (0, 5, 4, 3),
+        (4, 1, 0, 3),
+    )
+
+    def __init__(self, enabled=True):
+        self.enabled = enabled
+        self.available = True
+        self.error = None
+        self.sound = None
+        self.channel = None
+        self.preparing = False
+        self.lock = threading.Lock()
+
+    @staticmethod
+    def _frequency(note):
+        return 440.0 * 2 ** ((note - 69) / 12)
+
+    @classmethod
+    def _sound_buffers(cls, sample_rate, channels):
+        rng = random.Random()
+        beat = 60.0 / rng.choice((78, 82, 86, 90))
+        bar = beat * 4
+        step = beat / 2
+        progression = rng.choice(cls.PROGRESSIONS)
+        duration = bar * len(progression)
+        count = round(duration * sample_rate)
+        mono = array("h")
+        chord_frequencies = [
+            tuple(cls._frequency(note) for note in cls.CHORDS[index])
+            for index in progression
+        ]
+        bass_frequencies = [
+            cls._frequency(cls.CHORDS[index][0]) for index in progression
+        ]
+        arp_frequencies = [
+            cls._frequency(rng.choice(cls.CHORDS[chord_index]) + rng.choice((0, 12)))
+            for chord_index in progression
+            for _ in range(round(bar / step))
+        ]
+        bar_samples = round(bar * sample_rate)
+        step_samples = round(step * sample_rate)
+        beat_samples = round(beat * sample_rate)
+        fade_samples = round(0.15 * sample_rate)
+        attack_samples = max(1, round(0.02 * sample_rate))
+        phases = tuple(rng.uniform(0, math.tau) for _ in range(4))
+        samples = array("h")
+        block_size = 4096 * channels
+
+        for index in range(count):
+            t = index / sample_rate
+            chord_index = min(len(progression) - 1, index // bar_samples)
+            chord = chord_frequencies[chord_index]
+            pad = sum(
+                math.sin(math.tau * frequency * t + phase) * amplitude
+                for frequency, phase, amplitude in zip(
+                    chord, phases, (0.075, 0.055, 0.04, 0.03)
+                )
+            )
+            step_index, step_position = divmod(index, step_samples)
+            step_time = step_position / sample_rate
+            attack = min(1.0, step_position / attack_samples)
+            attack = attack * attack * (3.0 - 2.0 * attack)
+            arp = math.sin(
+                math.tau * arp_frequencies[step_index % len(arp_frequencies)] * step_time
+            )
+            arp *= math.exp(-step_time * 6.0) * attack * 0.075
+
+            beat_index, beat_position = divmod(index, beat_samples)
+            beat_time = beat_position / sample_rate
+            bass_frequency = bass_frequencies[chord_index]
+            if beat_index % 2:
+                bass_frequency *= 1.5
+            bass = math.sin(math.tau * bass_frequency * beat_time)
+            bass *= math.exp(-beat_time * 5.0) * 0.045
+
+            edge = min(1.0, index / fade_samples, (count - 1 - index) / fade_samples)
+            value = round(max(-1.0, min(1.0, (pad + bass + arp) * max(0.0, edge))) * 32767)
+            samples.extend((value,) * channels)
+            if len(samples) >= block_size:
+                yield samples.tobytes()
+                samples = array("h")
+
+        if samples:
+            yield samples.tobytes()
+
+    @classmethod
+    def _make_sound(cls, sample_rate, channels):
+        return pygame.mixer.Sound(buffer=b"".join(cls._sound_buffers(sample_rate, channels)))
+
+    @classmethod
+    async def _make_sound_async(cls, sample_rate, channels):
+        buffers = []
+        for buffer in cls._sound_buffers(sample_rate, channels):
+            buffers.append(buffer)
+            await asyncio.sleep(0)
+        return pygame.mixer.Sound(buffer=b"".join(buffers))
+
+    def _ensure_mixer(self):
+        if pygame.mixer.get_init() is None:
+            pygame.mixer.init(frequency=self.SAMPLE_RATE, size=-16, channels=1, buffer=512)
+        mixer_format = pygame.mixer.get_init()
+        if mixer_format[1] != -16:
+            raise pygame.error("El dispositivo de audio no admite muestras PCM de 16 bits.")
+        return mixer_format
+
+    def _play(self):
+        with self.lock:
+            if not self.enabled:
+                return
+            if self.channel is None or not self.channel.get_busy():
+                self.channel = self.sound.play(loops=-1)
+                if self.channel is None:
+                    raise pygame.error("No hay un canal de audio disponible.")
+                self.channel.set_volume(0.13)
+
+    def _record_error(self, exc):
+        self.available = False
+        self.error = str(exc)
+        with self.lock:
+            self.sound = self.channel = None
+
+    def prepare_for_web(self):
+        with self.lock:
+            if not self.enabled or not self.available or self.preparing:
+                return
+            self.preparing = True
+        try:
+            self._ensure_mixer()
+            asyncio.create_task(self._finish_web_preparation())
+        except pygame.error as exc:
+            self._record_error(exc)
+            with self.lock:
+                self.preparing = False
+
+    async def _finish_web_preparation(self):
+        try:
+            mixer_format = self._ensure_mixer()
+            if self.sound is None:
+                sound = await self._make_sound_async(mixer_format[0], mixer_format[2])
+                with self.lock:
+                    if not self.enabled:
+                        return
+                    if self.sound is None:
+                        self.sound = sound
+            self._play()
+        except pygame.error as exc:
+            self._record_error(exc)
+        finally:
+            with self.lock:
+                self.preparing = False
+
+    def prepare_and_start(self):
+        with self.lock:
+            if not self.enabled or not self.available or self.preparing:
+                return
+            self.preparing = True
+        try:
+            self._start()
+        finally:
+            with self.lock:
+                self.preparing = False
+
+    def _start(self):
+        try:
+            mixer_format = self._ensure_mixer()
+            if self.sound is None:
+                self.sound = self._make_sound(mixer_format[0], mixer_format[2])
+            self._play()
+        except pygame.error as exc:
+            self._record_error(exc)
+
+    def stop(self):
+        with self.lock:
+            if self.channel is not None:
+                self.channel.stop()
+                self.channel = None
+
+
+class ImpactSounds:
+    CATEGORIES = ("diana", "acierto", "cerca", "lejos")
+
+    def __init__(self):
+        self.sounds = {}
+        self.available = True
+        self.error = None
+
+    @staticmethod
+    def _make_sound(category, sample_rate, channels):
+        durations = {"diana": 0.34, "acierto": 0.27, "cerca": 0.25, "lejos": 0.22}
+        duration = durations[category]
+        count = round(duration * sample_rate)
+        rng = random.Random()
+        samples = array("h")
+        notes = {
+            "diana": ((660.0, 0.0, 0.19), (880.0, 0.15, 0.19)),
+            "acierto": ((494.0, 0.0, 0.15), (659.0, 0.12, 0.15)),
+        }.get(category, ())
+
+        for index in range(count):
+            t = index / sample_rate
+            value = 0.0
+            for frequency, start, note_duration in notes:
+                note_time = t - start
+                if 0.0 <= note_time < note_duration:
+                    envelope = min(1.0, note_time / 0.012, (note_duration - note_time) / 0.055)
+                    value += math.sin(math.tau * frequency * note_time) * max(0.0, envelope) * 0.28
+
+            if category == "cerca":
+                sweep = 590.0 * t - 680.0 * t * t / (2.0 * duration)
+                envelope = min(1.0, t / 0.008) * math.exp(-t * 8.0)
+                value += math.sin(math.tau * sweep) * envelope * 0.25
+            elif category == "lejos":
+                frequency = 145.0 - 70.0 * min(1.0, t / duration)
+                envelope = min(1.0, t / 0.006) * math.exp(-t * 17.0)
+                value += math.sin(math.tau * frequency * t) * envelope * 0.38
+
+            if t < 0.025:
+                value += rng.uniform(-1.0, 1.0) * (1.0 - t / 0.025) * 0.06
+            sample = round(max(-1.0, min(1.0, value)) * 32767)
+            samples.extend((sample,) * channels)
+
+        return pygame.mixer.Sound(buffer=samples.tobytes())
+
+    def prepare(self):
+        if not self.available or self.sounds:
+            return
+        try:
+            if pygame.mixer.get_init() is None:
+                pygame.mixer.init(frequency=22050, size=-16, channels=1, buffer=512)
+            mixer_format = pygame.mixer.get_init()
+            if mixer_format[1] != -16:
+                raise pygame.error("El dispositivo de audio no admite muestras PCM de 16 bits.")
+            self.sounds = {
+                category: self._make_sound(category, mixer_format[0], mixer_format[2])
+                for category in self.CATEGORIES
+            }
+        except pygame.error as exc:
+            self.available = False
+            self.error = str(exc)
+            self.sounds.clear()
+
+    def play(self, category):
+        if category not in self.CATEGORIES:
+            raise ValueError(f"Categoría de sonido desconocida: {category}")
+        self.prepare()
+        if not self.available:
+            return
+        try:
+            channel = self.sounds[category].play()
+            if channel is None:
+                raise pygame.error("No hay un canal de audio disponible.")
+            channel.set_volume(0.45)
+        except pygame.error as exc:
+            self.available = False
+            self.error = str(exc)
+            self.sounds.clear()
+
 
 def aa_circle(dst, color, center, radius):
     x, y, r = int(center[0]), int(center[1]), int(radius)
@@ -1462,6 +1782,9 @@ class Game:
         self.settings_store = GameSettings()
         self.graphics_quality = self.settings_store.load_quality()
         self.graphics_note = None
+        self.music = BackgroundMusic(self.settings_store.load_music_enabled())
+        self.impact_sounds = ImpactSounds()
+        self.music_note = None
         self.cursor = pygame.SYSTEM_CURSOR_ARROW
         self.last_phrase = {}
         self.state = MENU
@@ -1474,20 +1797,35 @@ class Game:
         self.match = Match()
         self._build_assets()
         self._build_widgets()
+        self._place_music_button()
         self._reset_round_state()
 
     def _open_display(self):
         if sys.platform == "emscripten":
             self.fullscreen = False
-            surface = pygame.display.get_surface()
-            if surface is None:
-                surface = pygame.display.set_mode((WIDTH, HEIGHT))
-            self.display = surface
-            self.canvas = surface.get_size()
-            self.ox, self.oy = (self.canvas[0] - WIDTH) // 2, (self.canvas[1] - HEIGHT) // 2
-            self.screen = surface.subsurface(pygame.Rect(self.ox, self.oy, WIDTH, HEIGHT))
+            self.output_surface = pygame.display.get_surface()
+            if self.output_surface is None:
+                self.output_surface = pygame.display.set_mode((WIDTH, HEIGHT))
+            self.canvas = (WIDTH, HEIGHT)
+            self.ox = self.oy = 0
+            self.display = pygame.Surface(self.canvas).convert()
+            self.screen = self.display
+            self.web_scale = min(
+                self.output_surface.get_width() / WIDTH,
+                self.output_surface.get_height() / HEIGHT,
+            )
+            frame_size = (
+                round(WIDTH * self.web_scale),
+                round(HEIGHT * self.web_scale),
+            )
+            self.web_offset = (
+                (self.output_surface.get_width() - frame_size[0]) // 2,
+                (self.output_surface.get_height() - frame_size[1]) // 2,
+            )
+            self.web_frame = pygame.Surface(frame_size).convert()
             return
 
+        self.output_surface = None
         flags = pygame.SCALED | (pygame.FULLSCREEN if self.fullscreen else pygame.RESIZABLE)
         size = screen_canvas()
         surface = None
@@ -1512,6 +1850,11 @@ class Game:
 
     def mouse_pos(self):
         x, y = pygame.mouse.get_pos()
+        if self.output_surface is not None:
+            return (
+                int((x - self.web_offset[0]) / self.web_scale),
+                int((y - self.web_offset[1]) / self.web_scale),
+            )
         return x - self.ox, y - self.oy
 
     def _build_assets(self):
@@ -1601,6 +1944,35 @@ class Game:
         self.save_btn = Button((RES_SAVE.x + 372, RES_SAVE.y + 48, 200, 50), "Guardar", "good")
         self.again_btn = Button((64, 624, 250, 56), "Jugar de Nuevo", "primary")
         self.menu_btn = Button((330, 624, 250, 56), "Menú", "ghost")
+        self.music_btn = Button((0, 0, 48, 46), "", "ghost", style="small_b")
+
+    def _place_music_button(self):
+        rect = {
+            MENU: (388, 630, 48, 42),
+            PLAY: (410, 14, 48, 46),
+            RESULT: (1084, 14, 48, 46),
+        }[self.state]
+        self.music_btn.rect = pygame.Rect(rect)
+        self.music_btn.enabled = self.music.available
+        self.music_btn.label = ""
+
+    def toggle_music(self):
+        if not self.music.available:
+            self.music_note = "No se pudo iniciar el audio en este dispositivo."
+            return
+        self.music.enabled = not self.music.enabled
+        if self.music.enabled:
+            if sys.platform == "emscripten":
+                self.music.prepare_for_web()
+            else:
+                asyncio.get_running_loop().run_in_executor(None, self.music.prepare_and_start)
+        else:
+            self.music.stop()
+        if not self.settings_store.save_music_enabled(self.music.enabled):
+            self.music_note = "El cambio de música no se pudo guardar."
+        else:
+            self.music_note = None
+        self._place_music_button()
 
     def _reset_round_state(self):
         self.problem = None
@@ -1739,6 +2111,9 @@ class Game:
         if not 0.0 < value <= MAX_ANGLE:
             self.say(f"Usa un ángulo entre 1° y {MAX_ANGLE:.0f}°", C_BAD)
             return
+        self.impact_sounds.prepare()
+        if not self.impact_sounds.available:
+            self.music_note = "No se pudieron iniciar los sonidos de impacto."
         self.pending = {"angle": value}
         self.balloon_idx = 0
         self.balloons_popped_this_shot = False
@@ -1756,6 +2131,7 @@ class Game:
     def finish_shot(self):
         shot, res, p, m = self.shot, self.pending, self.problem, self.match
         cat = judge(shot, abs(res["angle"] - p.root_deg))
+        self.impact_sounds.play(cat)
         hit = cat in ("diana", "acierto")
         mult = self.multiplier()
         points = round(POINTS[cat] * mult)
@@ -1970,7 +2346,22 @@ class Game:
             self.running = False
             return
         if hasattr(e, "pos"):
-            e = pygame.event.Event(e.type, {**e.dict, "pos": (e.pos[0] - self.ox, e.pos[1] - self.oy)})
+            if self.output_surface is not None:
+                pos = (
+                    int((e.pos[0] - self.web_offset[0]) / self.web_scale),
+                    int((e.pos[1] - self.web_offset[1]) / self.web_scale),
+                )
+            else:
+                pos = (e.pos[0] - self.ox, e.pos[1] - self.oy)
+            e = pygame.event.Event(e.type, {**e.dict, "pos": pos})
+        self._place_music_button()
+        if self.music_btn.handle(e):
+            self.toggle_music()
+            return
+        if (sys.platform == "emscripten" and self.music.enabled
+                and e.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN)
+                and not (hasattr(e, "pos") and self.music_btn.rect.collidepoint(e.pos))):
+            self.music.prepare_for_web()
         if e.type == pygame.KEYDOWN and e.key == pygame.K_F11:
             self.toggle_fullscreen()
             return
@@ -2100,6 +2491,8 @@ class Game:
         if self.graphics_quality != "bajo":
             self.scroll += dt * 16
         mouse = self.mouse_pos()
+        self._place_music_button()
+        self.music_btn.update(dt, mouse)
         if self.state == MENU:
             self.menu_input.update(dt)
             for button in self._menu_buttons():
@@ -2203,12 +2596,12 @@ class Game:
 
     def active_buttons(self):
         if self.state == MENU:
-            return self._menu_buttons()
+            return self._menu_buttons() + [self.music_btn]
         if self.state == RESULT:
-            return [self.save_btn, self.again_btn, self.menu_btn]
+            return [self.save_btn, self.again_btn, self.menu_btn, self.music_btn]
         if self.phase == SOLVED:
-            return [self.next_btn, self.new_btn]
-        return [self.fire_btn, self.bulb, self.new_btn]
+            return [self.next_btn, self.new_btn, self.music_btn]
+        return [self.fire_btn, self.bulb, self.new_btn, self.music_btn]
 
     def active_input(self):
         return {MENU: self.menu_input, PLAY: self.angle_input, RESULT: self.result_input}[self.state]
@@ -3044,10 +3437,53 @@ class Game:
         self.menu_btn.draw(ui, s)
 
     def draw(self):
+        self._place_music_button()
         {MENU: self.draw_menu, PLAY: self.draw_play, RESULT: self.draw_result}[self.state]()
+        self.music_btn.draw(self.ui, self.screen)
+        icon_color = C_GOOD if self.music.enabled and self.music.available else C_MUTED
+        icon_x, icon_y = self.music_btn.rect.center
+        pygame.draw.polygon(
+            self.screen, icon_color,
+            ((icon_x - 11, icon_y - 4), (icon_x - 6, icon_y - 4),
+             (icon_x + 1, icon_y - 10), (icon_x + 1, icon_y + 10),
+             (icon_x - 6, icon_y + 4), (icon_x - 11, icon_y + 4)),
+        )
+        if self.music.enabled and self.music.available:
+            pygame.draw.arc(
+                self.screen, icon_color,
+                pygame.Rect(icon_x - 4, icon_y - 10, 17, 20),
+                -0.95, 0.95, 2,
+            )
+            pygame.draw.arc(
+                self.screen, icon_color,
+                pygame.Rect(icon_x - 7, icon_y - 14, 25, 28),
+                -0.85, 0.85, 2,
+            )
+        else:
+            pygame.draw.line(
+                self.screen, C_WARN,
+                (icon_x - 7, icon_y + 9), (icon_x + 13, icon_y - 10), 3,
+            )
+        if self.music_note:
+            if self.state == MENU:
+                self.ui.text(
+                    self.screen, self.music_note, "tiny", C_WARN,
+                    (self.music_btn.rect.centerx, self.music_btn.rect.y - 4), "midbottom",
+                )
+            else:
+                self.ui.text(
+                    self.screen, self.music_note, "tiny", C_WARN,
+                    (self.music_btn.rect.centerx, self.music_btn.rect.bottom + 2), "midtop",
+                )
+        if self.output_surface is not None:
+            pygame.transform.scale(self.display, self.web_frame.get_size(), self.web_frame)
+            self.output_surface.fill(C_BG)
+            self.output_surface.blit(self.web_frame, self.web_offset)
         pygame.display.flip()
 
     async def run(self):
+        if sys.platform != "emscripten" and self.music.enabled:
+            asyncio.get_running_loop().run_in_executor(None, self.music.prepare_and_start)
         while self.running:
             platform_fps = int(sys.platform != "emscripten")
             raw = self.clock.tick(GRAPHICS_PROFILES[self.graphics_quality]["fps"][platform_fps]) / 1000.0
