@@ -1861,13 +1861,26 @@ class Game:
         self.web_output_size = current.get_size()
 
         self.web_scale = min(
+            current.get_width() / WIDTH,
+            current.get_height() / HEIGHT,
+        )
+        self.web_offset = (
+            (current.get_width() - round(WIDTH * self.web_scale)) // 2,
+            (current.get_height() - round(HEIGHT * self.web_scale)) // 2,
+        )
+        output_frame_size = (
+            round(WIDTH * self.web_scale),
+            round(HEIGHT * self.web_scale),
+        )
+        self.web_output_frame = pygame.Surface(output_frame_size).convert()
+        render_scale = min(
             requested_size[0] / WIDTH,
             requested_size[1] / HEIGHT,
             1.0,
         )
         frame_size = (
-            max(1, round(WIDTH * self.web_scale)),
-            max(1, round(HEIGHT * self.web_scale)),
+            max(1, round(WIDTH * render_scale)),
+            max(1, round(HEIGHT * render_scale)),
         )
         self.web_frame = pygame.Surface(frame_size).convert()
 
@@ -3605,8 +3618,12 @@ class Game:
         if self.output_surface is not None:
             pygame.transform.scale(self.display, self.web_frame.get_size(), self.web_frame)
             pygame.transform.scale(
-                self.web_frame, self.output_surface.get_size(), self.output_surface,
+                self.web_frame,
+                self.web_output_frame.get_size(),
+                self.web_output_frame,
             )
+            self.output_surface.fill(C_BG)
+            self.output_surface.blit(self.web_output_frame, self.web_offset)
         pygame.display.flip()
 
     async def run(self):
