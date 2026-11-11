@@ -1080,6 +1080,75 @@ def add_glow(dst, pos, radius, color):
     dst.blit(glow_surface(radius, tuple(color)), (pos[0] - radius, pos[1] - radius),
              special_flags=pygame.BLEND_RGB_ADD)
 
+@lru_cache(maxsize=32)
+def button_icon_surface(name, color, accent):
+    scale = 3
+    size = 24 * scale
+    icon = pygame.Surface((size, size), pygame.SRCALPHA)
+    fg = (*color, 255)
+    detail = (*accent, 255)
+
+    def point(x, y):
+        return round(x * scale), round(y * scale)
+
+    def line(points, stroke=1.6, ink=fg, closed=False):
+        scaled = [point(x, y) for x, y in points]
+        pygame.draw.lines(icon, ink, closed, scaled, max(1, round(stroke * scale)))
+        for x, y in (scaled if closed else (scaled[0], scaled[-1])):
+            pygame.draw.circle(icon, ink, (x, y), max(1, round(stroke * scale / 2)))
+
+    if name in ("keyboard", "keyboard_hidden"):
+        pygame.draw.rect(
+            icon, fg, pygame.Rect(point(1.5, 3.5), (21 * scale, 16 * scale)),
+            max(1, round(scale * 1.5)), border_radius=round(3 * scale),
+        )
+        for row in range(3):
+            for col in range(4):
+                pygame.draw.rect(
+                    icon, fg,
+                    pygame.Rect(point(4 + col * 4.2, 6 + row * 3.8),
+                                (2.1 * scale, 1.8 * scale)),
+                    border_radius=round(0.7 * scale),
+                )
+        pygame.draw.line(icon, fg, point(8, 17), point(16, 17), round(1.5 * scale))
+        if name == "keyboard_hidden":
+            line(((3, 21), (21, 3)), 2, detail)
+    elif name == "pin":
+        pygame.draw.circle(icon, fg, point(12, 5), round(2.4 * scale))
+        line(((12, 7.5), (12, 13), (12, 20)), 1.7)
+        line(((7, 9.5), (17, 9.5)), 1.7)
+        line(((9, 8), (9, 12), (15, 12), (15, 8)), 1.5)
+    elif name == "home":
+        line(((2.5, 11), (12, 2.8), (21.5, 11)), 2.1, closed=False)
+        line(((5, 9.5), (5, 21), (19, 21), (19, 9.5)), 1.8)
+        pygame.draw.rect(icon, fg, pygame.Rect(point(10, 14), (4 * scale, 7 * scale)),
+                         max(1, round(scale * 1.2)), border_radius=round(scale))
+    elif name == "play":
+        pygame.draw.polygon(icon, fg, (point(5, 2.5), point(21, 12), point(5, 21.5)))
+    elif name in ("speaker_on", "speaker_off"):
+        pygame.draw.polygon(
+            icon, fg,
+            (point(2.5, 9), point(7, 9), point(13, 4), point(13, 20),
+             point(7, 15), point(2.5, 15)),
+        )
+        if name == "speaker_on":
+            pygame.draw.arc(icon, fg, pygame.Rect(point(10, 6), (9 * scale, 12 * scale)),
+                            -0.95, 0.95, round(1.6 * scale))
+            pygame.draw.arc(icon, fg, pygame.Rect(point(9, 2), (15 * scale, 20 * scale)),
+                            -0.95, 0.95, round(1.4 * scale))
+        else:
+            line(((15, 8), (21, 16)), 1.8, detail)
+            line(((21, 8), (15, 16)), 1.8, detail)
+    return pygame.transform.smoothscale(icon, (24, 24))
+
+def draw_button_icon(dst, name, center, color, hover=0.0, pressed=False, accent=C_WARN):
+    icon = button_icon_surface(name, tuple(color), tuple(accent))
+    size = max(1, round(24 * (1.0 + 0.12 * hover)))
+    if size != 24:
+        icon = pygame.transform.smoothscale(icon, (size, size))
+    x, y = center
+    dst.blit(icon, icon.get_rect(center=(x, y + (2 if pressed else 0))))
+
 def vertical_gradient(size, stops):
     w, h = size
     surf = pygame.Surface(size)
@@ -1407,7 +1476,9 @@ class Button:
         if self.icon == "play":
             shift = 14
             x = rect.centerx - label.get_width() // 2 - 12
-            pygame.draw.polygon(dst, fg, [(x, rect.centery - 9), (x, rect.centery + 9), (x + 15, rect.centery)])
+            draw_button_icon(
+                dst, "play", (x + 8, rect.centery), fg, self.hover, self.pressed,
+            )
         dst.blit(label, label.get_rect(center=(rect.centerx + shift, rect.centery)))
 
 def draw_arc(dst, color, center, radius, frac, width):
@@ -3013,12 +3084,9 @@ class Game:
     def _draw_keypad_pin_icon(self, dst):
         cx, cy = self.angle_keypad_pin_btn.rect.center
         color = C_ACCENT if self.angle_keypad_pinned else C_MUTED
-        pygame.draw.circle(dst, color, (cx, cy - 7), 3)
-        pygame.draw.line(dst, color, (cx, cy - 4), (cx, cy + 2), 2)
-        pygame.draw.line(dst, color, (cx - 5, cy - 2), (cx + 5, cy - 2), 2)
-        pygame.draw.polygon(
-            dst, color,
-            ((cx - 3, cy + 1), (cx + 3, cy + 1), (cx, cy + 9)),
+        draw_button_icon(
+            dst, "pin", (cx, cy), color, self.angle_keypad_pin_btn.hover,
+            self.angle_keypad_pin_btn.pressed,
         )
 
     def chip(self, dst, right, y, label, value, color):
@@ -3824,28 +3892,11 @@ class Game:
         pygame.draw.circle(self.screen, (0, 0, 0), (icon_x, icon_y + 2), 22)
         pygame.draw.circle(self.screen, button_color, (icon_x, icon_y), 20)
         pygame.draw.circle(self.screen, icon_color, (icon_x, icon_y), 20, 2)
-        pygame.draw.polygon(
-            self.screen, icon_color,
-            ((icon_x - 9, icon_y - 3), (icon_x - 5, icon_y - 3),
-             (icon_x + 1, icon_y - 8), (icon_x + 1, icon_y + 8),
-             (icon_x - 5, icon_y + 3), (icon_x - 9, icon_y + 3)),
+        draw_button_icon(
+            self.screen,
+            "speaker_on" if self.music.enabled and self.music.available else "speaker_off",
+            (icon_x, icon_y), icon_color, self.music_btn.hover, self.music_btn.pressed,
         )
-        if self.music.enabled and self.music.available:
-            pygame.draw.arc(
-                self.screen, icon_color,
-                pygame.Rect(icon_x - 4, icon_y - 7, 12, 14),
-                -0.95, 0.95, 2,
-            )
-            pygame.draw.arc(
-                self.screen, icon_color,
-                pygame.Rect(icon_x - 7, icon_y - 10, 18, 20),
-                -0.85, 0.85, 2,
-            )
-        else:
-            pygame.draw.line(
-                self.screen, C_WARN,
-                (icon_x - 8, icon_y + 8), (icon_x + 9, icon_y - 9), 2,
-            )
         if self.state == PLAY and self.phase == AIM:
             self.angle_keypad_visibility_btn.draw(self.ui, self.screen)
             self._draw_keypad_visibility_icon()
@@ -3876,38 +3927,19 @@ class Game:
 
     def _draw_keypad_visibility_icon(self):
         rect = self.angle_keypad_visibility_btn.rect
-        cx, cy = rect.center
         color = C_TEXT if self.angle_keypad_visible else C_MUTED
-        keyboard = pygame.Rect(cx - 12, cy - 10, 24, 20)
-        pygame.draw.rect(self.screen, color, keyboard, 2, border_radius=3)
-        for row in range(3):
-            for col in range(4):
-                key = pygame.Rect(cx - 9 + col * 5, cy - 7 + row * 5, 3, 2)
-                pygame.draw.rect(self.screen, color, key, border_radius=1)
-        pygame.draw.line(
-            self.screen, color, (cx - 5, cy + 6), (cx + 5, cy + 6), 2,
+        draw_button_icon(
+            self.screen,
+            "keyboard" if self.angle_keypad_visible else "keyboard_hidden",
+            rect.center, color, self.angle_keypad_visibility_btn.hover,
+            self.angle_keypad_visibility_btn.pressed,
         )
-        if not self.angle_keypad_visible:
-            pygame.draw.line(
-                self.screen, C_WARN,
-                (cx - 11, cy + 11), (cx + 11, cy - 11), 2,
-            )
 
     def _draw_home_icon(self):
-        cx, cy = self.home_btn.rect.center
-        color = C_TEXT
-        pygame.draw.polygon(
-            self.screen, color,
-            ((cx - 11, cy - 1), (cx, cy - 11), (cx + 11, cy - 1)),
-            2,
+        draw_button_icon(
+            self.screen, "home", self.home_btn.rect.center, C_TEXT,
+            self.home_btn.hover, self.home_btn.pressed,
         )
-        pygame.draw.lines(
-            self.screen, color, False,
-            ((cx - 8, cy - 3), (cx - 8, cy + 9), (cx + 8, cy + 9),
-             (cx + 8, cy - 3)),
-            2,
-        )
-        pygame.draw.rect(self.screen, color, (cx - 2, cy + 3, 4, 6), 1)
 
     async def run(self):
         if sys.platform != "emscripten" and self.music.enabled:
