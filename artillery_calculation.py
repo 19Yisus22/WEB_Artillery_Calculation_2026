@@ -98,7 +98,7 @@ RES_RANK = pygame.Rect(620, 240, 596, 360)
 GRAPHICS_PROFILES = {
     "bajo": {
         "particles": 0.25, "max_particles": 80, "glow": False,
-        "layers": 1, "stars_step": 3, "clouds": 0, "fps": (60, 30),
+        "layers": 1, "stars_step": 3, "clouds": 0, "fps": (60, 45),
     },
     "medio": {
         "particles": 0.60, "max_particles": 220, "glow": True,
@@ -2079,8 +2079,10 @@ class Game:
         ]
         self.angle_input = TextInput((a.x + 16, a.y + 40, 226, 48), "0.00", 7, True, sticky=True, suffix="°")
         self.fire_btn = Button((a.x + 254, a.y + 40, 126, 48), "Disparar", "fire")
-        self.angle_keypad_rect = pygame.Rect(650, 254, 198, 248)
+        self.angle_keypad_rect = pygame.Rect(650, 254, 226, 248)
         self.angle_keypad_drag = None
+        self.angle_keypad_pinned = False
+        self.angle_keypad_visible = True
         keypad_keys = (
             ("1", "2", "3"),
             ("4", "5", "6"),
@@ -2103,6 +2105,8 @@ class Game:
             "fire",
             style="small_b",
         )
+        self.angle_keypad_pin_btn = Button((0, 0, 36, 22), "FIJ", "ghost", style="tiny_b")
+        self.angle_keypad_visibility_btn = Button((0, 0, 36, 22), "OCU", "ghost", style="tiny_b")
         self._layout_angle_keypad()
         self.bulb = BulbButton((a.x + 14, a.y + 98))
         self.new_btn = Button((a.x + 212, a.y + 106, 168, 38), "Nueva Ecuación", "ghost", style="btn_s")
@@ -2114,11 +2118,30 @@ class Game:
         self.music_btn = Button((0, 0, 42, 42), "", "ghost", style="small_b")
 
     def _place_music_button(self):
-        rect = {
-            MENU: (391, 633, 42, 42),
-            PLAY: (413, 17, 42, 42),
-            RESULT: (1087, 17, 42, 42),
-        }[self.state]
+        if self.state == MENU:
+            rect = (520, 633, 42, 42)
+        elif self.state == PLAY:
+            items = (
+                ("ARTILLERO", clean_name(self.menu_input.text) or "Invitado"),
+                ("ECUACIÓN", f"{min(self.round_index + 1, ROUNDS_PER_MATCH)}/{ROUNDS_PER_MATCH}"),
+                ("TIEMPO", fmt_time(self.time_left)),
+                ("PUNTOS", str(self.match.points)),
+                ("ACIERTOS · ERRORES", f"{self.match.hits} · {self.match.errors}"),
+            )
+            chips_left = WIDTH - 16
+            for label, value in reversed(items):
+                chips_left -= max(
+                    self.ui.measure(label, "label"),
+                    self.ui.measure(value, "h2"),
+                ) + 38
+            title_right = (
+                72 + self.ui.measure("ARTILLERY", "title") + 10
+                + self.ui.measure("CALCULATION", "title")
+            )
+            button_x = (title_right + chips_left - 42) // 2
+            rect = (button_x, 17, 42, 42)
+        else:
+            rect = (1087, 17, 42, 42)
         self.music_btn.rect = pygame.Rect(rect)
         self.music_btn.enabled = self.music.available
         self.music_btn.label = ""
@@ -2624,6 +2647,23 @@ class Game:
         elif self.phase == AIM:
             if self._handle_angle_keypad_drag(e):
                 return
+            pin_keypad = self.angle_keypad_pin_btn.handle(e)
+            toggle_keypad = self.angle_keypad_visibility_btn.handle(e)
+            if pin_keypad:
+                self.angle_keypad_pinned = not self.angle_keypad_pinned
+                self.angle_keypad_pin_btn.label = "LIB" if self.angle_keypad_pinned else "FIJ"
+                return
+            if toggle_keypad:
+                self.angle_keypad_visible = not self.angle_keypad_visible
+                if self.angle_keypad_visible:
+                    self._move_angle_keypad(
+                        self.angle_keypad_rect.x,
+                        self.angle_keypad_rect.y,
+                    )
+                self.angle_keypad_visibility_btn.label = (
+                    "OCU" if self.angle_keypad_visible else "VER"
+                )
+                return
             before = self.angle_input.text
             self.angle_input.handle(e)
             if self.angle_input.text != before:
@@ -2794,7 +2834,9 @@ class Game:
             return [self.next_btn, self.new_btn, self.music_btn]
         buttons = [self.fire_btn, self.bulb, self.new_btn, self.music_btn]
         if self.phase == AIM:
-            buttons.extend(self.angle_keypad.values())
+            buttons.extend((self.angle_keypad_pin_btn, self.angle_keypad_visibility_btn))
+            if self.angle_keypad_visible:
+                buttons.extend(self.angle_keypad.values())
         return buttons
 
     def active_input(self):
@@ -2805,8 +2847,10 @@ class Game:
         for row, keys in enumerate((("1", "2", "3"), ("4", "5", "6"),
                                     ("7", "8", "9"), (".", "0", "BORRAR"))):
             for col, key in enumerate(keys):
-                self.angle_keypad[key].rect.topleft = (x + 12 + col * 60, y + 34 + row * 42)
-        self.angle_keypad["ENTER"].rect.topleft = (x + 12, y + 202)
+                self.angle_keypad[key].rect.topleft = (x + 26 + col * 60, y + 34 + row * 42)
+        self.angle_keypad["ENTER"].rect.topleft = (x + 26, y + 202)
+        self.angle_keypad_pin_btn.rect.topleft = (x + self.angle_keypad_rect.w - 88, y + 5)
+        self.angle_keypad_visibility_btn.rect.topleft = (x + self.angle_keypad_rect.w - 48, y + 5)
 
     def _keypad_finger_pos(self, event):
         surface = self.output_surface or pygame.display.get_surface()
@@ -2823,8 +2867,9 @@ class Game:
 
     def _move_angle_keypad(self, x, y):
         rect = self.angle_keypad_rect
+        height = rect.h if self.angle_keypad_visible else 34
         rect.x = clamp(x, 0, WIDTH - rect.w)
-        rect.y = clamp(y, 0, HEIGHT - rect.h)
+        rect.y = clamp(y, 0, HEIGHT - height)
         self._layout_angle_keypad()
 
     def _handle_angle_keypad_drag(self, event):
@@ -2857,12 +2902,18 @@ class Game:
         else:
             return False
 
+        if self.angle_keypad_pinned:
+            return False
         header = pygame.Rect(
             self.angle_keypad_rect.x,
             self.angle_keypad_rect.y,
             self.angle_keypad_rect.w,
             30,
         )
+        if pointer is not None and (
+                self.angle_keypad_pin_btn.rect.collidepoint(pointer)
+                or self.angle_keypad_visibility_btn.rect.collidepoint(pointer)):
+            return False
         if pointer is not None and header.collidepoint(pointer):
             self.angle_keypad_drag = (
                 pointer[0] - self.angle_keypad_rect.x,
@@ -2879,7 +2930,8 @@ class Game:
             self.angle_keypad_rect.x, self.angle_keypad_rect.y,
             self.angle_keypad_rect.w, 30,
         )
-        if (self.state == PLAY and self.phase == AIM and keypad_header.collidepoint(mouse)
+        if (self.state == PLAY and self.phase == AIM and not self.angle_keypad_pinned
+                and keypad_header.collidepoint(mouse)
                 or any(b.enabled and b.rect.collidepoint(mouse) for b in self.active_buttons())):
             cursor = pygame.SYSTEM_CURSOR_HAND
         elif self.active_input().rect.collidepoint(mouse):
@@ -2923,11 +2975,15 @@ class Game:
             self.ui.rounded(rect.size, 14, (9, 15, 36, 248), (65, 92, 170), 1),
             rect.topleft,
         )
-        self.ui.text(s, "TECLADO NUMÉRICO", "tiny_b", C_MUTED, (rect.x + 12, rect.y + 9))
+        self.ui.text(s, "TECLADO", "tiny_b", C_MUTED, (rect.x + 12, rect.y + 9))
         pygame.draw.line(
             s, (60, 74, 140), (rect.x + 12, rect.y + 27),
             (rect.right - 12, rect.y + 27), 1,
         )
+        self.angle_keypad_pin_btn.draw(self.ui, s)
+        self.angle_keypad_visibility_btn.draw(self.ui, s)
+        if not self.angle_keypad_visible:
+            return
         for button in self.angle_keypad.values():
             button.draw(self.ui, s)
 

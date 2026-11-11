@@ -50,6 +50,14 @@ body {
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
+body.simulated-landscape #canvas.emscripten {
+  max-width: none !important;
+  max-height: none !important;
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+#mobile-angle-input {
+  transform-origin: center;
+}
 #orientation-gate {
   position: fixed;
   inset: 0;
@@ -234,12 +242,6 @@ body.needs-landscape #orientation-gate {
   background: radial-gradient(ellipse at 65% 80%, rgba(35, 83, 106, 0.25), transparent 60%),
     rgba(5, 11, 24, 0.75);
 }
-#game-loader .loader-kicker {
-  margin: 0 0 5px;
-  color: #ffb042;
-  font: 700 9px/1.4 ui-monospace, monospace;
-  letter-spacing: 0.18em;
-}
 #game-loader h1 {
   margin: 0;
   font-size: clamp(22px, 5vw, 28px);
@@ -306,6 +308,9 @@ body.game-ready #game-loader {
   #orientation-gate {
     display: grid;
   }
+}
+body.simulated-landscape #orientation-gate {
+  display: none;
 }
 @media (max-height: 520px) {
   #orientation-gate {
@@ -389,7 +394,6 @@ body.game-ready #game-loader {
       <text x="20" y="24" fill="#8297b8" font-family="monospace" font-size="9" letter-spacing="2">CÁLCULO DE TRAYECTORIA</text>
       <text x="333" y="88" fill="#ffcf83" font-family="monospace" font-size="8" letter-spacing="1">OBJETIVO</text>
     </svg>
-    <p class="loader-kicker">SISTEMA DE CONTROL · NEWTON–RAPHSON</p>
     <h1>Calculando trayectoria</h1>
     <p class="loader-copy">Calibrando el cañón y preparando el campo de tiro...</p>
     <div class="loader-track" role="progressbar" aria-label="Progreso estimado de carga" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
@@ -409,8 +413,8 @@ body.game-ready #game-loader {
     </svg>
     <h2 id="orientation-title">Gira tu teléfono</h2>
     <p>Artillery Calculation se juega en pantalla horizontal.</p>
-    <p id="orientation-status" aria-live="polite">Intentando activar la orientación horizontal. Si no gira, usa el botón o gira el móvil manualmente.</p>
-    <button id="rotate-screen" type="button">Intentar giro automático</button>
+    <p id="orientation-status" aria-live="polite">Gira el juego dentro del navegador, sin activar pantalla completa.</p>
+    <button id="rotate-screen" type="button">GIRAR PANTALLA</button>
   </div>
 </div>
 <input id="mobile-angle-input" type="text" inputmode="text" enterkeyhint="done"
@@ -425,12 +429,12 @@ body.game-ready #game-loader {
   const progressStatus = document.getElementById("loader-progress-status");
   const progressPercent = document.getElementById("loader-progress-percent");
   const orientationGate = document.getElementById("orientation-gate");
-  const orientationStatus = document.getElementById("orientation-status");
   const rotateButton = document.getElementById("rotate-screen");
   const mobileAngleInput = document.getElementById("mobile-angle-input");
   const portrait = window.matchMedia("(orientation: portrait)");
   const coarsePointer = window.matchMedia("(pointer: coarse)");
   const loadingStartedAt = performance.now();
+  let simulatedLandscape = false;
   let resizeFrame = 0;
   let resizeObserver;
   let downloadCompletedAt = null;
@@ -468,39 +472,27 @@ body.game-ready #game-loader {
   };
 
   const isMobilePortrait = () => portrait.matches && coarsePointer.matches;
-  const requestLandscape = () => {
-    const orientation = window.screen && window.screen.orientation;
-    if (!orientation || typeof orientation.lock !== "function") {
-      if (orientationStatus) {
-        orientationStatus.textContent = "Este navegador no permite girar la pantalla automáticamente. Activa el giro del móvil y colócalo horizontalmente.";
-      }
-      return Promise.resolve(false);
-    }
-    return orientation.lock("landscape").then(() => true).catch(() => {
-      if (orientationStatus) {
-        orientationStatus.textContent = "Este navegador no permite girar la pantalla automáticamente. Activa el giro del móvil y colócalo horizontalmente.";
-      }
-      return false;
-    });
-  };
   const updateOrientation = () => {
-    const blocked = isMobilePortrait();
+    if (!portrait.matches && coarsePointer.matches) simulatedLandscape = false;
+    const simulated = simulatedLandscape && isMobilePortrait();
+    const blocked = isMobilePortrait() && !simulated;
+    document.body.classList.toggle("simulated-landscape", simulated);
     document.body.classList.toggle("needs-landscape", blocked);
     if (!blocked && orientationGate.contains(document.activeElement)) {
       document.activeElement.blur();
     }
     orientationGate.setAttribute("aria-hidden", String(!blocked));
-    if (blocked) requestLandscape();
   };
 
   const fitCanvas = () => {
     cancelAnimationFrame(resizeFrame);
     resizeFrame = requestAnimationFrame(() => {
       const viewport = window.visualViewport;
-      const width = viewport ? viewport.width : document.documentElement.clientWidth;
-      const height = viewport ? viewport.height : document.documentElement.clientHeight;
+      let width = viewport ? viewport.width : document.documentElement.clientWidth;
+      let height = viewport ? viewport.height : document.documentElement.clientHeight;
       if (!width || !height) return;
       const mobile = coarsePointer.matches;
+      if (simulatedLandscape && isMobilePortrait()) [width, height] = [height, width];
       const memory = Number(navigator.deviceMemory) || 4;
       const cores = Number(navigator.hardwareConcurrency) || 4;
       const deviceLimit = !mobile ? 1
@@ -532,10 +524,23 @@ body.game-ready #game-loader {
     const y = Number(mobileAngleInput.getAttribute("data-input-y"));
     const width = Number(mobileAngleInput.getAttribute("data-input-width"));
     const height = Number(mobileAngleInput.getAttribute("data-input-height"));
+    if (simulatedLandscape && isMobilePortrait()) {
+      const inputWidth = rect.width * height / 720;
+      const inputHeight = rect.height * width / 1280;
+      const centerX = rect.left + rect.width * (1 - (y + height / 2) / 720);
+      const centerY = rect.top + rect.height * (x + width / 2) / 1280;
+      mobileAngleInput.style.left = `${centerX - inputWidth / 2}px`;
+      mobileAngleInput.style.top = `${centerY - inputHeight / 2}px`;
+      mobileAngleInput.style.width = `${inputWidth}px`;
+      mobileAngleInput.style.height = `${inputHeight}px`;
+      mobileAngleInput.style.transform = "rotate(90deg)";
+      return;
+    }
     mobileAngleInput.style.left = `${rect.left + rect.width * x / 1280}px`;
     mobileAngleInput.style.top = `${rect.top + rect.height * y / 720}px`;
     mobileAngleInput.style.width = `${rect.width * width / 1280}px`;
     mobileAngleInput.style.height = `${rect.height * height / 720}px`;
+    mobileAngleInput.style.transform = "none";
   };
   const hideMobileAngleInput = () => {
     mobileAngleInput.setAttribute("data-editing", "false");
@@ -544,8 +549,12 @@ body.game-ready #game-loader {
   };
   canvas.addEventListener("click", (event) => {
     const rect = canvas.getBoundingClientRect();
-    const x = (event.clientX - rect.left) / rect.width * 1280;
-    const y = (event.clientY - rect.top) / rect.height * 720;
+    const x = simulatedLandscape && isMobilePortrait()
+      ? (event.clientY - rect.top) / rect.height * 1280
+      : (event.clientX - rect.left) / rect.width * 1280;
+    const y = simulatedLandscape && isMobilePortrait()
+      ? (1 - (event.clientX - rect.left) / rect.width) * 720
+      : (event.clientY - rect.top) / rect.height * 720;
     const inputX = Number(mobileAngleInput.getAttribute("data-input-x"));
     const inputY = Number(mobileAngleInput.getAttribute("data-input-y"));
     const inputWidth = Number(mobileAngleInput.getAttribute("data-input-width"));
@@ -576,7 +585,11 @@ body.game-ready #game-loader {
     }
   });
   mobileAngleInput.addEventListener("input", positionMobileAngleInput);
-  rotateButton.addEventListener("click", requestLandscape);
+  rotateButton.addEventListener("click", () => {
+    simulatedLandscape = true;
+    updateOrientation();
+    fitCanvas();
+  });
   window.addEventListener("resize", fitCanvas, { passive: true });
   window.addEventListener("orientationchange", () => {
     fitCanvas();
