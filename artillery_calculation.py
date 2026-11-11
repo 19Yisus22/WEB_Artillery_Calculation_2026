@@ -2659,6 +2659,9 @@ class Game:
         return e.type == pygame.KEYDOWN and e.key in (pygame.K_RETURN, pygame.K_KP_ENTER)
 
     def event_menu(self, e):
+        if self.play_btn.handle(e):
+            self.start_match()
+            return
         self.menu_input.handle(e)
         for i, button in enumerate(self.menu_tabs):
             if button.handle(e):
@@ -3745,9 +3748,7 @@ class Game:
             s.blit(ui.rounded(card.size, 12, (16, 23, 54, 235), (*color, 120), 1), card.topleft)
             ui.text(s, title, "tiny", color, (card.centerx, card.y + 24), "center")
             ui.paragraph(s, detail, "tiny", C_TEXT, (card.x + 12, card.y + 48), card.w - 24, gap=2)
-        fps_index = 0 if sys.platform == "emscripten" else 1
-        selected_fps = GRAPHICS_PROFILES[self.graphics_quality]["fps"][fps_index]
-        ui.text(s, f"Nivel activo: {self.graphics_quality.upper()}  ·  Límite: {selected_fps} FPS",
+        ui.text(s, f"Nivel activo: {self.graphics_quality.upper()}",
                 "body_b", C_TEXT, (rect.x + 24, 548))
         if self.graphics_note:
             color = C_GOOD if self.graphics_note.endswith("guardada.") else C_WARN
@@ -3945,8 +3946,7 @@ class Game:
         if sys.platform != "emscripten" and self.music.enabled:
             asyncio.get_running_loop().run_in_executor(None, self.music.prepare_and_start)
         while self.running:
-            platform_fps = int(sys.platform != "emscripten")
-            raw = self.clock.tick(GRAPHICS_PROFILES[self.graphics_quality]["fps"][platform_fps]) / 1000.0
+            raw = self.clock.tick() / 1000.0
             for event in pygame.event.get():
                 self.handle_event(event)
             self.update(min(raw, 0.05), raw)
