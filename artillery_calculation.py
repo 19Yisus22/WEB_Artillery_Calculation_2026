@@ -1293,6 +1293,15 @@ class TextInput:
                 self.text = self.text[: self.cursor] + ch + self.text[self.cursor:]
                 self.cursor += 1
 
+    def insert_text(self, text):
+        self._insert(text)
+        self.blink = 0.0
+
+    def clear(self):
+        self.text = ""
+        self.cursor = 0
+        self.blink = 0.0
+
     def handle(self, e):
         if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
             hit = self.rect.collidepoint(e.pos)
@@ -2070,6 +2079,31 @@ class Game:
         ]
         self.angle_input = TextInput((a.x + 16, a.y + 40, 226, 48), "0.00", 7, True, sticky=True, suffix="°")
         self.fire_btn = Button((a.x + 254, a.y + 40, 126, 48), "Disparar", "fire")
+        self.angle_keypad_rect = pygame.Rect(650, 254, 198, 248)
+        self.angle_keypad_drag = None
+        keypad_keys = (
+            ("1", "2", "3"),
+            ("4", "5", "6"),
+            ("7", "8", "9"),
+            (".", "0", "BORRAR"),
+        )
+        self.angle_keypad = {}
+        for row, keys in enumerate(keypad_keys):
+            for col, key in enumerate(keys):
+                button = Button(
+                    (0, 0, 54, 37),
+                    key,
+                    "ghost" if key == "BORRAR" else "primary",
+                    style="tiny_b" if key == "BORRAR" else "h2",
+                )
+                self.angle_keypad[key] = button
+        self.angle_keypad["ENTER"] = Button(
+            (0, 0, 174, 36),
+            "ENTER · DISPARAR",
+            "fire",
+            style="small_b",
+        )
+        self._layout_angle_keypad()
         self.bulb = BulbButton((a.x + 14, a.y + 98))
         self.new_btn = Button((a.x + 212, a.y + 106, 168, 38), "Nueva Ecuación", "ghost", style="btn_s")
         self.next_btn = Button((0, 0, 340, 56), "Nueva Ecuación", "primary")
@@ -2588,10 +2622,29 @@ class Game:
         if (self.phase == FLIGHT and e.type == pygame.MOUSEBUTTONDOWN and e.button == 1):
             self.shot_speed_multiplier = SHOT_CLICK_SPEED
         elif self.phase == AIM:
+            if self._handle_angle_keypad_drag(e):
+                return
             before = self.angle_input.text
             self.angle_input.handle(e)
             if self.angle_input.text != before:
                 self.message = None
+            keypad_action = None
+            for key, button in self.angle_keypad.items():
+                if button.handle(e):
+                    keypad_action = key
+            if keypad_action:
+                self.angle_input.focused = True
+                if keypad_action == "ENTER":
+                    self.fire()
+                elif keypad_action == "BORRAR":
+                    self.angle_input.clear()
+                    self.message = None
+                else:
+                    self.angle_input.insert_text(keypad_action)
+                    self.message = None
+                if (self.mobile_angle_input is not None
+                        and self.mobile_angle_input.getAttribute("data-editing") == "true"):
+                    self.mobile_angle_input.value = self.angle_input.text
             if (e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and self.drawer_t > 0.9
                     and DRAWER_CLOSE.collidepoint(e.pos)):
                 self.drawer_open = False
@@ -2669,6 +2722,8 @@ class Game:
         self.next_btn.enabled = self.phase == SOLVED
         for b in (self.fire_btn, self.new_btn, self.next_btn):
             b.update(dt, mouse)
+        for button in self.angle_keypad.values():
+            button.update(dt, mouse)
         self.bulb.update(dt, mouse, aim and (self.hint_ready() or self.hints > 0), self.hint_ready(),
                          self.hint_left(), self.hints >= MAX_HINTS)
         goal = 1.0 if (self.drawer_open and aim and self.hints) else 0.0
@@ -2737,14 +2792,95 @@ class Game:
             return [self.save_btn, self.again_btn, self.menu_btn, self.music_btn]
         if self.phase == SOLVED:
             return [self.next_btn, self.new_btn, self.music_btn]
-        return [self.fire_btn, self.bulb, self.new_btn, self.music_btn]
+        buttons = [self.fire_btn, self.bulb, self.new_btn, self.music_btn]
+        if self.phase == AIM:
+            buttons.extend(self.angle_keypad.values())
+        return buttons
 
     def active_input(self):
         return {MENU: self.menu_input, PLAY: self.angle_input, RESULT: self.result_input}[self.state]
 
+    def _layout_angle_keypad(self):
+        x, y = self.angle_keypad_rect.topleft
+        for row, keys in enumerate((("1", "2", "3"), ("4", "5", "6"),
+                                    ("7", "8", "9"), (".", "0", "BORRAR"))):
+            for col, key in enumerate(keys):
+                self.angle_keypad[key].rect.topleft = (x + 12 + col * 60, y + 34 + row * 42)
+        self.angle_keypad["ENTER"].rect.topleft = (x + 12, y + 202)
+
+    def _keypad_finger_pos(self, event):
+        surface = self.output_surface or pygame.display.get_surface()
+        if surface is None:
+            return None
+        x = event.x * surface.get_width()
+        y = event.y * surface.get_height()
+        if self.output_surface is not None:
+            return (
+                int((x - self.web_offset[0]) / self.web_scale),
+                int((y - self.web_offset[1]) / self.web_scale),
+            )
+        return int(x - self.ox), int(y - self.oy)
+
+    def _move_angle_keypad(self, x, y):
+        rect = self.angle_keypad_rect
+        rect.x = clamp(x, 0, WIDTH - rect.w)
+        rect.y = clamp(y, 0, HEIGHT - rect.h)
+        self._layout_angle_keypad()
+
+    def _handle_angle_keypad_drag(self, event):
+        is_mouse = event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION)
+        is_finger = event.type in (pygame.FINGERDOWN, pygame.FINGERUP, pygame.FINGERMOTION)
+        if self.angle_keypad_drag:
+            offset_x, offset_y, pointer_type, finger_id = self.angle_keypad_drag
+            if pointer_type == "mouse" and is_mouse:
+                if event.type == pygame.MOUSEMOTION:
+                    self._move_angle_keypad(event.pos[0] - offset_x, event.pos[1] - offset_y)
+                    return True
+                if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                    self.angle_keypad_drag = None
+                    return True
+            elif pointer_type == "finger" and is_finger and event.finger_id == finger_id:
+                pointer = self._keypad_finger_pos(event)
+                if pointer is not None and event.type == pygame.FINGERMOTION:
+                    self._move_angle_keypad(pointer[0] - offset_x, pointer[1] - offset_y)
+                    return True
+                if event.type == pygame.FINGERUP:
+                    self.angle_keypad_drag = None
+                    return True
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            pointer = event.pos
+            pointer_type, finger_id = "mouse", None
+        elif event.type == pygame.FINGERDOWN:
+            pointer = self._keypad_finger_pos(event)
+            pointer_type, finger_id = "finger", event.finger_id
+        else:
+            return False
+
+        header = pygame.Rect(
+            self.angle_keypad_rect.x,
+            self.angle_keypad_rect.y,
+            self.angle_keypad_rect.w,
+            30,
+        )
+        if pointer is not None and header.collidepoint(pointer):
+            self.angle_keypad_drag = (
+                pointer[0] - self.angle_keypad_rect.x,
+                pointer[1] - self.angle_keypad_rect.y,
+                pointer_type,
+                finger_id,
+            )
+            return True
+        return False
+
     def update_cursor(self, mouse):
         cursor = pygame.SYSTEM_CURSOR_ARROW
-        if any(b.enabled and b.rect.collidepoint(mouse) for b in self.active_buttons()):
+        keypad_header = pygame.Rect(
+            self.angle_keypad_rect.x, self.angle_keypad_rect.y,
+            self.angle_keypad_rect.w, 30,
+        )
+        if (self.state == PLAY and self.phase == AIM and keypad_header.collidepoint(mouse)
+                or any(b.enabled and b.rect.collidepoint(mouse) for b in self.active_buttons())):
             cursor = pygame.SYSTEM_CURSOR_HAND
         elif self.active_input().rect.collidepoint(mouse):
             cursor = pygame.SYSTEM_CURSOR_IBEAM
@@ -2778,6 +2914,22 @@ class Game:
         self.draw_toast(s)
         self.draw_next_button(s)
         self.draw_time_flash(s)
+        if self.phase == AIM:
+            self.draw_angle_keypad(s)
+
+    def draw_angle_keypad(self, s):
+        rect = self.angle_keypad_rect
+        s.blit(
+            self.ui.rounded(rect.size, 14, (9, 15, 36, 248), (65, 92, 170), 1),
+            rect.topleft,
+        )
+        self.ui.text(s, "TECLADO NUMÉRICO", "tiny_b", C_MUTED, (rect.x + 12, rect.y + 9))
+        pygame.draw.line(
+            s, (60, 74, 140), (rect.x + 12, rect.y + 27),
+            (rect.right - 12, rect.y + 27), 1,
+        )
+        for button in self.angle_keypad.values():
+            button.draw(self.ui, s)
 
     def chip(self, dst, right, y, label, value, color):
         ui = self.ui
