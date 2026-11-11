@@ -56,8 +56,12 @@ body {
   z-index: 12000;
   display: none;
   place-items: center;
-  padding: 24px;
+  padding: max(12px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
   box-sizing: border-box;
+  overflow: auto;
   background: #070a18;
   color: #e9eeff;
   font: 15px/1.5 system-ui, sans-serif;
@@ -67,7 +71,11 @@ body.needs-landscape #orientation-gate {
   display: grid;
 }
 #orientation-gate .orientation-card {
+  box-sizing: border-box;
   width: min(100%, 380px);
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 28px 24px;
   border: 1px solid rgba(56, 224, 255, 0.28);
   border-radius: 18px;
@@ -95,15 +103,21 @@ body.needs-landscape #orientation-gate {
 }
 #orientation-gate button {
   width: 100%;
-  min-height: 48px;
+  min-height: 56px;
   margin-top: 8px;
+  padding: 14px 16px;
   border: 0;
   border-radius: 10px;
   background: linear-gradient(100deg, #38e0ff, #76f0d0);
   color: #071321;
-  font: 700 15px/1.2 system-ui, sans-serif;
+  font: 700 clamp(14px, 4vw, 16px)/1.3 system-ui, sans-serif;
   cursor: pointer;
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+#orientation-gate button:active {
+  filter: brightness(0.92);
+  transform: translateY(1px);
 }
 #orientation-gate button:focus-visible {
   outline: 3px solid #ffb042;
@@ -116,6 +130,7 @@ body.needs-landscape #orientation-gate {
   position: fixed;
   inset: 0;
   z-index: 11000;
+  pointer-events: none;
   display: grid;
   place-items: center;
   padding: 20px;
@@ -293,6 +308,30 @@ body.game-ready #game-loader {
   }
 }
 @media (max-height: 520px) {
+  #orientation-gate {
+    padding: 8px;
+  }
+  #orientation-gate .orientation-card {
+    width: min(100%, 460px);
+    padding: 14px 18px;
+  }
+  #orientation-gate .orientation-icon {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 6px;
+  }
+  #orientation-gate h2 {
+    margin-bottom: 4px;
+    font-size: 19px;
+  }
+  #orientation-gate p {
+    margin: 5px 0;
+  }
+  #orientation-gate button {
+    min-height: 48px;
+    margin-top: 4px;
+    padding: 10px 12px;
+  }
   #game-loader {
     padding: 10px;
   }

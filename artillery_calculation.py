@@ -1850,27 +1850,24 @@ class Game:
         import platform
 
         canvas = platform.window.document.getElementById("canvas")
-        requested_size = (
-            int(canvas.getAttribute("data-render-width") or WIDTH),
-            int(canvas.getAttribute("data-render-height") or HEIGHT),
-        )
         current = pygame.display.get_surface()
-        if current is None or current.get_size() != requested_size:
-            self.output_surface = pygame.display.set_mode(requested_size)
-        else:
-            self.output_surface = current
+        if current is None:
+            raise pygame.error("La pantalla web de Pygame no está inicializada.")
+        requested_size = (
+            int(canvas.getAttribute("data-render-width") or current.get_width()),
+            int(canvas.getAttribute("data-render-height") or current.get_height()),
+        )
+        self.output_surface = current
+        self.web_output_size = current.get_size()
 
         self.web_scale = min(
-            self.output_surface.get_width() / WIDTH,
-            self.output_surface.get_height() / HEIGHT,
+            requested_size[0] / WIDTH,
+            requested_size[1] / HEIGHT,
+            1.0,
         )
         frame_size = (
             max(1, round(WIDTH * self.web_scale)),
             max(1, round(HEIGHT * self.web_scale)),
-        )
-        self.web_offset = (
-            (self.output_surface.get_width() - frame_size[0]) // 2,
-            (self.output_surface.get_height() - frame_size[1]) // 2,
         )
         self.web_frame = pygame.Surface(frame_size).convert()
 
@@ -1880,12 +1877,21 @@ class Game:
         import platform
 
         canvas = platform.window.document.getElementById("canvas")
-        requested_size = (
-            int(canvas.getAttribute("data-render-width") or WIDTH),
-            int(canvas.getAttribute("data-render-height") or HEIGHT),
-        )
         current = pygame.display.get_surface()
-        if current is None or current.get_size() != requested_size:
+        if current is None:
+            raise pygame.error("La pantalla web de Pygame no está inicializada.")
+        requested_width = max(
+            1, int(canvas.getAttribute("data-render-width") or current.get_width()),
+        )
+        requested_height = max(
+            1, int(canvas.getAttribute("data-render-height") or current.get_height()),
+        )
+        render_scale = min(requested_width / WIDTH, requested_height / HEIGHT, 1.0)
+        frame_size = (
+            max(1, round(WIDTH * render_scale)),
+            max(1, round(HEIGHT * render_scale)),
+        )
+        if current.get_size() != self.web_output_size or self.web_frame.get_size() != frame_size:
             self._resize_web_output()
 
     def toggle_fullscreen(self):
@@ -3598,8 +3604,9 @@ class Game:
                 )
         if self.output_surface is not None:
             pygame.transform.scale(self.display, self.web_frame.get_size(), self.web_frame)
-            self.output_surface.fill(C_BG)
-            self.output_surface.blit(self.web_frame, self.web_offset)
+            pygame.transform.scale(
+                self.web_frame, self.output_surface.get_size(), self.output_surface,
+            )
         pygame.display.flip()
 
     async def run(self):
