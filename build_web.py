@@ -21,6 +21,22 @@ body {
   margin: 0;
   background: #070a18 !important;
 }
+#mobile-angle-input {
+  position: fixed;
+  z-index: 10500;
+  display: none;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  opacity: 0.01;
+  font-size: 16px;
+  touch-action: manipulation;
+}
 #canvas.emscripten {
   position: fixed !important;
   top: 50% !important;
@@ -358,6 +374,9 @@ body.game-ready #game-loader {
     <button id="rotate-screen" type="button">Intentar giro automático</button>
   </div>
 </div>
+<input id="mobile-angle-input" type="text" inputmode="decimal" enterkeyhint="done"
+  maxlength="7" autocomplete="off" autocapitalize="off" spellcheck="false"
+  aria-label="Ángulo del disparo, de 0 a 180 grados">
 <script>
 (() => {
   const canvas = document.getElementById("canvas");
@@ -370,6 +389,7 @@ body.game-ready #game-loader {
   const orientationGate = document.getElementById("orientation-gate");
   const orientationStatus = document.getElementById("orientation-status");
   const rotateButton = document.getElementById("rotate-screen");
+  const mobileAngleInput = document.getElementById("mobile-angle-input");
   const portrait = window.matchMedia("(orientation: portrait)");
   const coarsePointer = window.matchMedia("(pointer: coarse)");
   const loadingStartedAt = performance.now();
@@ -446,8 +466,50 @@ body.game-ready #game-loader {
       const scale = Math.min(width / canvas.width, height / canvas.height);
       canvas.style.setProperty("width", `${Math.floor(canvas.width * scale)}px`, "important");
       canvas.style.setProperty("height", `${Math.floor(canvas.height * scale)}px`, "important");
+      positionMobileAngleInput();
     });
   };
+  const positionMobileAngleInput = () => {
+    if (mobileAngleInput.getAttribute("data-editing") !== "true") return;
+    const rect = canvas.getBoundingClientRect();
+    mobileAngleInput.style.left = `${rect.left + rect.width * 884 / 1280}px`;
+    mobileAngleInput.style.top = `${rect.top + rect.height * 294 / 720}px`;
+    mobileAngleInput.style.width = `${rect.width * 226 / 1280}px`;
+    mobileAngleInput.style.height = `${rect.height * 48 / 720}px`;
+  };
+  const hideMobileAngleInput = () => {
+    mobileAngleInput.setAttribute("data-editing", "false");
+    mobileAngleInput.style.display = "none";
+    if (document.activeElement === mobileAngleInput) mobileAngleInput.blur();
+  };
+  canvas.addEventListener("click", (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width * 1280;
+    const y = (event.clientY - rect.top) / rect.height * 720;
+    if (x >= 884 && x <= 1110 && y >= 294 && y <= 342) {
+      mobileAngleInput.setAttribute("data-editing", "true");
+      mobileAngleInput.style.display = "block";
+      positionMobileAngleInput();
+      mobileAngleInput.focus({ preventScroll: true });
+    } else {
+      hideMobileAngleInput();
+    }
+  }, true);
+  mobileAngleInput.addEventListener("focus", () => {
+    mobileAngleInput.setAttribute("data-editing", "true");
+  });
+  mobileAngleInput.addEventListener("blur", () => {
+    mobileAngleInput.setAttribute("data-editing", "false");
+    mobileAngleInput.style.display = "none";
+  });
+  mobileAngleInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      mobileAngleInput.setAttribute("data-submit", "true");
+      mobileAngleInput.blur();
+    }
+  });
+  mobileAngleInput.addEventListener("input", positionMobileAngleInput);
   rotateButton.addEventListener("click", () => requestLandscape(true));
   window.addEventListener("resize", fitCanvas, { passive: true });
   window.addEventListener("orientationchange", () => {
@@ -508,6 +570,10 @@ with tempfile.TemporaryDirectory(prefix="artillery-pygbag-") as temp_dir:
             "-m",
             "pygbag",
             "--build",
+            "--width",
+            "1920",
+            "--height",
+            "1080",
             "--title",
             "Artillery Calculation",
             "main.py",
@@ -523,6 +589,20 @@ with tempfile.TemporaryDirectory(prefix="artillery-pygbag-") as temp_dir:
 
 output_path = APP_DIR / "build" / "web" / "index.html"
 html = output_path.read_text(encoding="utf-8")
+html, width_count = re.subn(
+    r"(?m)^WIDTH=\d+\s+# 1920$",
+    "WIDTH=1920  # 1920",
+    html,
+    count=1,
+)
+html, height_count = re.subn(
+    r"(?m)^HEIGHT=\d+\s+# 1080$",
+    "HEIGHT=1080  # 1080",
+    html,
+    count=1,
+)
+if not width_count or not height_count:
+    raise RuntimeError(f"No se encontró la configuración del lienzo Pygbag en: {output_path}")
 html = re.sub(r'\s*<meta name="viewport"[^>]*>', "", html, flags=re.IGNORECASE)
 html, head_count = re.subn(
     r"<head([^>]*)>",

@@ -66,7 +66,7 @@ flowchart LR
 | Concepto | Valor |
 |---|---|
 | Gravedad | `9.81 m/s²` |
-| Rango de ángulo | `1°` a `180°` (el blanco puede estar a tu **izquierda**) |
+| Rango de ángulo | `0°` a `180°` (el blanco puede estar a tu **izquierda**) |
 | Distancia al blanco | `100 m` a `1000 m` |
 | Tipos de tiro | **Bajo** y **alto** (la bala cae casi vertical) |
 | Tolerancia de diana | **±0.005°** |
@@ -152,8 +152,9 @@ Si recoges un globo durante un disparo fallido, se evita la penalización de tie
 | Siguiente ecuación | Botón | `Enter` (tras acertar) |
 | Volver al menú | Botón **Menú** | `Esc` |
 | Guardar puntuación | Botón **Guardar** | `Enter` |
+| Alternar pantalla completa en escritorio | — | `F11` |
 
-> 📱 En móviles, el juego se adapta al área visible y conserva su proporción. Al detectar el teléfono en vertical, solicita el giro horizontal y bloquea la partida con un aviso hasta que la pantalla esté apaisada. El bloqueo automático depende de los permisos y las funciones del navegador; si no está disponible, el aviso permite intentarlo y explica cómo girar el teléfono manualmente. Durante la carga se muestra el progreso de descarga y, después, el avance estimado de preparación hasta que el juego está listo.
+> 🖥️ En escritorio, el juego inicia en pantalla completa y escala su lienzo para ocupar la pantalla; pulsa `F11` para alternar el modo. 📱 En móviles, el juego se adapta al área visible y conserva su proporción. Toca el campo del ángulo para abrir el teclado numérico con decimales; se aceptan valores entre `0°` y `180°`. La salida web se renderiza en resolución HD (1920×1080). Al detectar el teléfono en vertical, solicita el giro horizontal y bloquea la partida con un aviso hasta que la pantalla esté apaisada. El bloqueo automático depende de los permisos y las funciones del navegador; si no está disponible, el aviso permite intentarlo y explica cómo girar el teléfono manualmente. Durante la carga se muestra el progreso de descarga y, después, el avance estimado de preparación hasta que el juego está listo.
 
 El menú principal muestra el **Top 4** de jugadores ordenado por promedio de puntos y un indicador compacto de calidad gráfica en un lateral. Las pestañas permiten consultar las instrucciones y la clasificación completa, o cambiar el ajuste **Bajo / Medio / Alto**. Las instrucciones se pueden desplazar con la rueda del mouse o arrastrando/deslizando dentro del panel. El nivel reduce o activa partículas, brillos, capas animadas y la velocidad de fotogramas según el dispositivo; la preferencia se guarda para la próxima visita. En la web, el límite es de 30, 45 o 60 FPS según la calidad seleccionada; en escritorio es de 60 FPS.
 

@@ -111,15 +111,6 @@ GRAPHICS_PROFILES = {
 }
 GRAPHICS_QUALITY = ("bajo", "medio", "alto")
 
-def screen_canvas():
-    """Tamaño lógico del lienzo: misma proporción que el monitor de la máquina (mínimo 1280x720)."""
-    try:
-        dw, dh = pygame.display.get_desktop_sizes()[0]
-    except (AttributeError, IndexError, pygame.error):
-        dw, dh = WIDTH, HEIGHT
-    aspect = clamp(dw / max(dh, 1), 1.0, 3.2)
-    return max(WIDTH, int(round(HEIGHT * aspect))), max(HEIGHT, int(round(WIDTH / aspect)))
-
 MENU, PLAY, RESULT = "menu", "play", "result"
 AIM, FLIGHT, SETTLE, SOLVED = "aim", "flight", "settle", "solved"
 
@@ -1772,6 +1763,11 @@ class Game:
         pygame.display.set_icon(make_icon())
         pygame.display.set_caption(TITLE)
         self.fullscreen = True
+        self.mobile_angle_input = None
+        if sys.platform == "emscripten":
+            import platform
+
+            self.mobile_angle_input = platform.window.document.getElementById("mobile-angle-input")
         self._open_display()
         pygame.key.start_text_input()
         self.clock = pygame.time.Clock()
@@ -1827,7 +1823,7 @@ class Game:
 
         self.output_surface = None
         flags = pygame.SCALED | (pygame.FULLSCREEN if self.fullscreen else pygame.RESIZABLE)
-        size = screen_canvas()
+        size = (WIDTH, HEIGHT)
         surface = None
         for extra in ({"vsync": 1}, {}):
             try:
@@ -1847,6 +1843,35 @@ class Game:
         self._open_display()
         pygame.key.start_text_input()
         self.cursor = None
+
+    def sync_mobile_angle_input(self):
+        mobile_input = self.mobile_angle_input
+        if mobile_input is None:
+            return
+
+        editing = mobile_input.getAttribute("data-editing") == "true"
+        submitting = mobile_input.getAttribute("data-submit") == "true"
+        if submitting:
+            mobile_input.removeAttribute("data-submit")
+        if self.state == PLAY and self.phase == AIM and (editing or submitting):
+            text = ""
+            for char in str(mobile_input.value):
+                if len(text) >= self.angle_input.max_len:
+                    break
+                if char.isascii() and char.isdigit() or char in ".,":
+                    if char in ".," and any(separator in text for separator in ".,"):
+                        continue
+                    text += char
+            if text != self.angle_input.text:
+                self.angle_input.set_text(text)
+                self.message = None
+            if submitting:
+                self.fire()
+        else:
+            if editing:
+                mobile_input.blur()
+            if str(mobile_input.value) != self.angle_input.text:
+                mobile_input.value = self.angle_input.text
 
     def mouse_pos(self):
         x, y = pygame.mouse.get_pos()
@@ -2108,8 +2133,8 @@ class Game:
         if value is None:
             self.say("Escribe un número", C_BAD)
             return
-        if not 0.0 < value <= MAX_ANGLE:
-            self.say(f"Usa un ángulo entre 1° y {MAX_ANGLE:.0f}°", C_BAD)
+        if not 0.0 <= value <= MAX_ANGLE:
+            self.say(f"Usa un ángulo entre 0° y {MAX_ANGLE:.0f}°", C_BAD)
             return
         self.impact_sounds.prepare()
         if not self.impact_sounds.available:
@@ -2487,6 +2512,7 @@ class Game:
             self.go_menu()
 
     def update(self, dt, real=None):
+        self.sync_mobile_angle_input()
         self.clock_t += dt
         if self.graphics_quality != "bajo":
             self.scroll += dt * 16
@@ -2540,7 +2566,7 @@ class Game:
 
         if self.phase == AIM:
             value = parse_angle(self.angle_input.text)
-            if value is not None and 0.0 < value <= MAX_ANGLE:
+            if value is not None and 0.0 <= value <= MAX_ANGLE:
                 self.aim_deg = value 
         self.barrel_deg += (self.aim_deg - self.barrel_deg) * min(1.0, dt * 12.0)
         self.recoil = max(0.0, self.recoil - dt * 3.0)
