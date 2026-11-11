@@ -429,20 +429,19 @@ body.game-ready #game-loader {
   };
 
   const isMobilePortrait = () => portrait.matches && coarsePointer.matches;
-  const requestLandscape = (enterFullscreen = false) => {
-    let fullscreen = Promise.resolve();
-    if (enterFullscreen && !document.fullscreenElement && document.documentElement.requestFullscreen) {
-      fullscreen = document.documentElement.requestFullscreen().catch(() => {});
-    }
-    return fullscreen.then(() => {
-      const orientation = window.screen && window.screen.orientation;
-      if (!orientation || typeof orientation.lock !== "function") return false;
-      return orientation.lock("landscape").then(() => true).catch(() => false);
-    }).then((locked) => {
-      if (!locked && orientationStatus) {
+  const requestLandscape = () => {
+    const orientation = window.screen && window.screen.orientation;
+    if (!orientation || typeof orientation.lock !== "function") {
+      if (orientationStatus) {
         orientationStatus.textContent = "Este navegador no permite girar la pantalla automáticamente. Activa el giro del móvil y colócalo horizontalmente.";
       }
-      return locked;
+      return Promise.resolve(false);
+    }
+    return orientation.lock("landscape").then(() => true).catch(() => {
+      if (orientationStatus) {
+        orientationStatus.textContent = "Este navegador no permite girar la pantalla automáticamente. Activa el giro del móvil y colócalo horizontalmente.";
+      }
+      return false;
     });
   };
   const updateOrientation = () => {
@@ -538,7 +537,7 @@ body.game-ready #game-loader {
     }
   });
   mobileAngleInput.addEventListener("input", positionMobileAngleInput);
-  rotateButton.addEventListener("click", () => requestLandscape(true));
+  rotateButton.addEventListener("click", requestLandscape);
   window.addEventListener("resize", fitCanvas, { passive: true });
   window.addEventListener("orientationchange", () => {
     fitCanvas();
