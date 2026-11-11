@@ -2,7 +2,7 @@
 
 <img src="https://capsule-render.vercel.app/api?type=waving&height=240&color=0:070a18,50:38e0ff,100:a082ff&text=ARTILLERY%20CALCULATION&fontColor=ffffff&fontSize=46&fontAlignY=38&desc=Dispara%20con%20matem%C3%A1ticas%20%C2%B7%20Newton-Raphson%20en%20acci%C3%B3n&descAlignY=60&descSize=18&animation=fadeIn" alt="Artillery Calculation" width="100%"/>
 
-<img src="logo.ico" alt="Logo" width="84"/>
+<img src="assets/logo.ico" alt="Logo" width="84"/>
 
 <a href="https://git.io/typing-svg"><img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=22&duration=3200&pause=900&color=38E0FF&center=true&vCenter=true&width=720&lines=Encuentra+el+%C3%A1ngulo+exacto+del+ca%C3%B1%C3%B3n+%F0%9F%8E%AF;10+rondas+%C2%B7+10+minutos+%C2%B7+cero+margen+de+error;Si+fallas%2C+la+ecuaci%C3%B3n+NO+cambia%3A+itera+y+corrige;Tolerancia+de+diana%3A+%C2%B10.005%C2%B0" alt="Typing SVG"/></a>
 
@@ -102,6 +102,8 @@ Cada ronda genera un reto distinto con un terreno y un objetivo aleatorios:
 
 </div>
 
+Las pistas normales y los fallos reducen el multiplicador de puntos **10 % cada uno**; nunca baja de **20 %**. Una pista gratis obtenida de un globo no reduce el multiplicador. El globo **×2** duplica la puntuación del siguiente acierto.
+
 ### ⏱️ Reloj
 
 - La partida dura **10 minutos** y consta de **10 rondas**.
@@ -114,31 +116,26 @@ Cada ronda genera un reto distinto con un terreno y un objetivo aleatorios:
 
 ---
 
-## 💡 Sistema de pistas
+## 💡 Sistema de pistas y consejos
 
-La **bombilla** te ofrece hasta **7 pistas por partida** (1 cada 15 segundos). Van de lo general a lo específico:
+La **bombilla** o la tecla `Tab` ofrece hasta **7 pistas por ecuación**, una cada **15 segundos**. Revelan información de la tabla de Newton-Raphson, desde una explicación general hasta la fila que contiene la respuesta. Cada pista normal reduce el multiplicador de esa ronda un **10 %**.
 
-1. 🔎 Entiende qué mide `f(X)`
-2. 🌱 Usa la semilla `X₀`
-3. 🧮 Primera corrección con la fórmula
-4. 🔁 Sigue iterando
-5. 📍 Casi converge: te acota el ángulo entre dos grados
-6. ... hasta revelar la fila de la tabla que guarda la respuesta
-
-Además, tras varios fallos el juego puede darte **consejos** automáticos, por ejemplo: *«Corrige solo la mitad de lo que te equivocaste»* o *«Medio grado ya mueve la bala varios metros»*.
+Tras varios fallos, el juego también puede mostrar **consejos tácticos** sobre cómo corregir el ángulo o interpretar el reto.
 
 ---
 
 ## 🎈 Globos de ayuda
 
-Si fallas **3 veces o más**, pueden aparecer **globos** en el campo. **Atraviésalos con la trayectoria de tu bala** para activar su efecto:
+Después de **3 o más fallos** pueden aparecer globos. Duran **30 segundos**: atraviesa uno con la bala para activar su bonificación. Pueden aparecer varios:
 
 | Globo | Efecto |
 |:---:|:---|
 | 🟡 **Doble** | **×2 puntos** en tu próximo acierto |
-| 🔵 **Congelar** | **Congela el reloj 20 s** (sin penalizaciones mientras dure) |
-| 🟢 **Tiempo** | **+45 s** al reloj |
-| 🟠 **Pista** | **Una pista gratis** |
+| 🔵 **Congelar** | Detiene el reloj **20 s**; se acumula hasta **60 s** |
+| 🟢 **Tiempo** | Añade **45 s** (el reloj no supera los **10 minutos**) |
+| 🟠 **Pista** | Revela una pista **sin reducir el multiplicador** |
+
+Si recoges un globo durante un disparo fallido, se evita la penalización de tiempo de ese fallo.
 
 ---
 
@@ -150,11 +147,14 @@ Si fallas **3 veces o más**, pueden aparecer **globos** en el campo. **Atravié
 | Disparar | Botón **Disparar** | `Enter` |
 | Repetir disparo | Esperar la cuenta atrás de **3 segundos** | — |
 | Pedir pista (bombilla) | Icono 💡 | `Tab` |
+| Acelerar bala en vuelo (×4) | Haz clic mientras viaja | — |
 | Siguiente ecuación | Botón | `Enter` (tras acertar) |
 | Volver al menú | Botón **Menú** | `Esc` |
 | Guardar puntuación | Botón **Guardar** | `Enter` |
 
-> 📱 Funciona en **escritorio y móvil**: el lienzo se escala automáticamente a cualquier pantalla.
+> 📱 Funciona en **escritorio y móvil**: el lienzo se escala automáticamente al área visible en orientación vertical u horizontal, conservando la proporción del juego para evitar deformaciones.
+
+El menú principal muestra el **Top 4** de jugadores ordenado por promedio de puntos y un indicador compacto de calidad gráfica en un lateral. Las pestañas permiten consultar las instrucciones y la clasificación completa, o cambiar el ajuste **Bajo / Medio / Alto**. Las instrucciones se pueden desplazar con la rueda del mouse o arrastrando/deslizando dentro del panel. El nivel reduce o activa partículas, brillos, capas animadas y la velocidad de fotogramas según el dispositivo; la preferencia se guarda para la próxima visita. La versión web mantiene un máximo de 30 FPS para limitar el consumo de batería.
 
 ---
 
@@ -170,24 +170,28 @@ Al terminar puedes guardar tu nombre (hasta **14 caracteres**) y competir en el 
 
 ## 🚀 Cómo ejecutarlo
 
-Para preparar la versión web, instala las dependencias y ejecuta el constructor:
+Para preparar la versión web, usa un entorno virtual para no modificar el Python del sistema:
 
 ```bash
-python -m pip install -r requirements.txt
-python build_web.py
-python -m http.server 8000 --directory web_build/build/web
+python -m venv .venv
+# Windows
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe build_web.py
+.venv\Scripts\python.exe -m http.server 8000 --directory web_build/build/web
 # Abre http://localhost:8000
 ```
+
+En macOS/Linux, sustituye `.venv\Scripts\python.exe` por `.venv/bin/python`.
 
 También puedes ejecutar la versión de escritorio:
 
 ```bash
-python artillery_calculation.py
+.venv\Scripts\python.exe main.py
 ```
 
 ### 🌐 Publicar en Vercel
 
-Importa el repositorio en Vercel. El archivo `vercel.json` instala Pygbag, genera el juego WebAssembly y publica `build/web` como sitio estático. No se requiere una función backend ni una base de datos.
+Importa el repositorio en Vercel y conserva la configuración de compilación detectada desde `vercel.json`. El proceso crea un entorno virtual `.vercel-venv` para instalar las dependencias sin modificar el Python administrado por Vercel, ejecuta Pygbag y publica `web_build/build/web` como sitio estático. No se requiere una función backend ni una base de datos.
 
 ---
 
@@ -195,18 +199,20 @@ Importa el repositorio en Vercel. El archivo `vercel.json` instala Pygbag, gener
 
 ```
 📦 artillery-calculation
- ┣ 📜 artillery_calculation.py  ← juego, física, interfaz y animaciones
- ┣ 📜 main.py                   ← punto de entrada web de Pygbag
+ ┣ 📜 main.py                   ← punto de entrada para escritorio y web
+ ┣ 📜 artillery_calculation.py ← lógica del juego, física, interfaz y animaciones
  ┣ 📜 requirements.txt          ← dependencias de escritorio y compilación web
  ┣ 📜 build_web.py              ← crea un paquete web aislado del guardado local
  ┣ 📜 vercel.json               ← compilación y publicación estática en Vercel
- ┣ 🖼️ logo.ico                  ← logo original
- ┣ 🖼️ favicon.png               ← icono de pestaña del juego web
+ ┣ 📁 assets/
+ ┃ ┣ 🖼️ logo.ico                ← logo del proyecto
+ ┃ ┗ 🖼️ favicon.png             ← icono web
+ ┣ 📁 save_prof/                ← puntuaciones locales de escritorio
  ┣ 📁 web_build/                ← paquete web generado (no se sube como fuente)
  ┗ 📘 README.md
 ```
 
-> ⚠️ Mantén `favicon.png` en la raíz del proyecto para que Pygbag lo incluya en la pestaña del juego.
+> El punto de entrada es `main.py`. Pygbag compila desde una carpeta temporal y `web_build/` solo conserva los archivos web generados, sin copias duplicadas del código fuente.
 
 ---
 

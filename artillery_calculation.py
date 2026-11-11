@@ -29,7 +29,7 @@ else:
 # Configuración de pantalla
 # ---------------------------------------------------------------------------
 
-WIDTH, HEIGHT, FPS = 1280, 720, 60
+WIDTH, HEIGHT = 1280, 720
 TITLE = "Artillery Calculation"
 
 SAVE_DIR = Path(__file__).resolve().parent / "save_prof"
@@ -65,10 +65,10 @@ TIME_MAX = 600.0
 TIME_PENALTY_BASE, TIME_PENALTY_STEP, TIME_PENALTY_MAX = 10.0, 5.0, 60.0
 BALLOON_MIN_FAILS, BALLOON_LIFE = 3, 30.0
 BALLOON_TIME_BONUS, FREEZE_SECONDS = 45.0, 20.0
-BALLOON_R = 26              # radio (px) igual para TODOS los globos
-PENALIZE_NEAR_MISS = True   # True: «¡CASI!» también descuenta tiempo; False: solo el fallo total («lejos»)
-TIME_FLASH_SECONDS = 2.4    # cuánto dura el aviso «-10 s» sobre la tarjeta de la misión
-SHOT_CLICK_SPEED = 4.0      # multiplicador de velocidad del proyectil al hacer clic durante el vuelo
+BALLOON_R = 26
+PENALIZE_NEAR_MISS = True
+TIME_FLASH_SECONDS = 2.4
+SHOT_CLICK_SPEED = 4.0
 FIRE_COOLDOWN_SECONDS = 3.0
 
 FIELD = pygame.Rect(16, 76, 836, 628)
@@ -84,11 +84,30 @@ ANSWER_RECT = pygame.Rect(868, 254, 396, 158)
 DRAWER_RECT = pygame.Rect(FIELD.x + 16, FIELD.y + 12, 560, 112)
 DRAWER_CLOSE = pygame.Rect(DRAWER_RECT.right - 38, DRAWER_RECT.y + 8, 30, 30)
 METHOD_RECT = pygame.Rect(868, 422, 396, 282)
-MENU_TUTORIAL = pygame.Rect(656, 36, 584, 388)
-MENU_RANK = pygame.Rect(656, 436, 584, 248)
+MENU_PANEL = pygame.Rect(632, 32, 616, 656)
+MENU_INTRO = pygame.Rect(32, 32, 568, 656)
+MENU_TUTORIAL = pygame.Rect(648, 144, 584, 520)
+TUTORIAL_CONTENT_HEIGHT = 570
+MENU_RANK = pygame.Rect(648, 144, 584, 520)
+MENU_QUALITY = pygame.Rect(648, 144, 584, 520)
 RES_LEFT = pygame.Rect(64, 100, 520, 500)
 RES_SAVE = pygame.Rect(620, 100, 596, 128)
 RES_RANK = pygame.Rect(620, 240, 596, 360)
+GRAPHICS_PROFILES = {
+    "bajo": {
+        "particles": 0.25, "max_particles": 80, "glow": False,
+        "layers": 1, "stars_step": 3, "clouds": 0, "fps": (60, 60),
+    },
+    "medio": {
+        "particles": 0.60, "max_particles": 220, "glow": True,
+        "layers": 2, "stars_step": 1, "clouds": 3, "fps": (60, 60),
+    },
+    "alto": {
+        "particles": 1.0, "max_particles": 520, "glow": True,
+        "layers": 3, "stars_step": 1, "clouds": 5, "fps": (60, 60),
+    },
+}
+GRAPHICS_QUALITY = ("bajo", "medio", "alto")
 
 def screen_canvas():
     """Tamaño lógico del lienzo: misma proporción que el monitor de la máquina (mínimo 1280x720)."""
@@ -249,8 +268,6 @@ def path_is_clear(X, c, plateau, dist, side=1):
             return False
     return True
 
-# Contextos (misiones) para que el problema no se sienta siempre igual.
-# (título de misión, texto corto, nombre del blanco). {lado} se reemplaza por la dirección.
 SCENARIOS = {
     "plano": [
         ("DRON ENEMIGO", "Un dron aterrizó en el llano, {lado}. Derríbalo con un solo disparo.", "DRON"),
@@ -535,7 +552,6 @@ def judge(shot, error_deg):
         return "diana" if error_deg <= DIANA_TOL else "acierto"
     return "cerca" if shot.best <= NEAR_MISS_R else "lejos"
 
-# Consejos tácticos que aparecen (con probabilidad baja) tras varios fallos.
 TIPS_GENERAL = (
     "Haz cambios grandes al inicio (de 5° en 5°) y afina después con décimas.",
     "Mira dónde cayó la bala y corrige solo la mitad de lo que te equivocaste.",
@@ -682,6 +698,53 @@ class ScoreStore:
             return "error"
         return "ok"
 
+class GameSettings:
+    """Preferencias visuales en una cookie (web) o en save_prof/settings.json."""
+
+    def __init__(self):
+        self.path = SAVE_DIR / "settings.json"
+
+    def load_quality(self):
+        if sys.platform == "emscripten":
+            import platform
+
+            for item in str(platform.window.document.cookie).split(";"):
+                key, separator, value = item.strip().partition("=")
+                if separator and key == "artillery_graphics_quality":
+                    return value if value in GRAPHICS_PROFILES else "medio"
+            return "medio"
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return "medio"
+        except (OSError, ValueError):
+            return "medio"
+        quality = data.get("calidad_grafica") if isinstance(data, dict) else None
+        return quality if isinstance(quality, str) and quality in GRAPHICS_PROFILES else "medio"
+
+    def save_quality(self, quality):
+        if not isinstance(quality, str) or quality not in GRAPHICS_PROFILES:
+            raise ValueError(f"Nivel gráfico no válido: {quality}")
+        if sys.platform == "emscripten":
+            import platform
+
+            platform.window.document.cookie = (
+                f"artillery_graphics_quality={quality}; path=/; max-age=31536000; samesite=lax"
+            )
+            for item in str(platform.window.document.cookie).split(";"):
+                key, separator, value = item.strip().partition("=")
+                if separator and key == "artillery_graphics_quality" and value == quality:
+                    return True
+            return False
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps({"calidad_grafica": quality}, indent=2), encoding="utf-8")
+            tmp.replace(self.path)
+        except OSError:
+            return False
+        return True
+
 def aa_circle(dst, color, center, radius):
     x, y, r = int(center[0]), int(center[1]), int(radius)
     if r < 1 or not -300 < x < dst.get_width() + 300 or not -300 < y < dst.get_height() + 300:
@@ -744,6 +807,7 @@ class UI:
         self.text_cache, self.shape_cache, self.wrap_cache = {}, {}, {}
         spec = {
             "label": (self.SANS, 12, True), "tiny": (self.SANS, 12, False),
+            "tiny_b": (self.SANS, 12, True),
             "small": (self.SANS, 13, False), "small_b": (self.SANS, 13, True),
             "body": (self.SANS, 15, False), "body_b": (self.SANS, 15, True),
             "lead": (self.SANS, 18, False),
@@ -867,11 +931,25 @@ class UI:
         self.text(dst, text, style, color, rect.center, "center")
 
 class TextInput:
+    KEYPAD_DIGITS = {
+        pygame.K_KP0: "0",
+        pygame.K_KP1: "1",
+        pygame.K_KP2: "2",
+        pygame.K_KP3: "3",
+        pygame.K_KP4: "4",
+        pygame.K_KP5: "5",
+        pygame.K_KP6: "6",
+        pygame.K_KP7: "7",
+        pygame.K_KP8: "8",
+        pygame.K_KP9: "9",
+    }
+
     def __init__(self, rect, placeholder, max_len, numeric, sticky=False, suffix=""):
         self.rect = pygame.Rect(rect)
         self.placeholder, self.max_len, self.numeric = placeholder, max_len, numeric
         self.sticky, self.suffix = sticky, suffix
         self.text, self.cursor, self.focused, self.blink = "", 0, sticky, 0.0
+        self.pending_keypad_text = ""
 
     def set_text(self, text):
         self.text = text[: self.max_len]
@@ -885,6 +963,12 @@ class TextInput:
             return ch.isdigit() and ch.isascii() or (ch in ".," and not any(c in ".," for c in self.text))
         return ch.isalnum() or ch in " _-."
 
+    def _insert(self, text):
+        for ch in text:
+            if len(self.text) < self.max_len and self._allowed(ch):
+                self.text = self.text[: self.cursor] + ch + self.text[self.cursor:]
+                self.cursor += 1
+
     def handle(self, e):
         if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
             hit = self.rect.collidepoint(e.pos)
@@ -892,14 +976,23 @@ class TextInput:
             self.blink = 0.0
             return
         if not self.focused:
+            self.pending_keypad_text = ""
             return
         if e.type == pygame.TEXTINPUT:
-            for ch in e.text:
-                if len(self.text) < self.max_len and self._allowed(ch):
-                    self.text = self.text[: self.cursor] + ch + self.text[self.cursor:]
-                    self.cursor += 1
+            text = e.text
+            if self.pending_keypad_text:
+                if text.startswith(self.pending_keypad_text):
+                    text = text[1:]
+                self.pending_keypad_text = ""
+            self._insert(text)
         elif e.type == pygame.KEYDOWN:
-            if e.key == pygame.K_BACKSPACE and self.cursor > 0:
+            keypad_text = self.KEYPAD_DIGITS.get(e.key)
+            if keypad_text is None and self.numeric and e.key == pygame.K_KP_PERIOD:
+                keypad_text = "."
+            self.pending_keypad_text = keypad_text or ""
+            if keypad_text:
+                self._insert(keypad_text)
+            elif e.key == pygame.K_BACKSPACE and self.cursor > 0:
                 self.text = self.text[: self.cursor - 1] + self.text[self.cursor:]
                 self.cursor -= 1
             elif e.key == pygame.K_DELETE:
@@ -1232,9 +1325,11 @@ class Backdrop:
             self.meteor = None
             self.next_meteor = t + self.rng.uniform(14.0, 28.0)
 
-    def _draw_stars(self, dst, t):
+    def _draw_stars(self, dst, t, step=1):
         w = self.size[0]
-        for x0, y, b, big, speed in self.stars: 
+        for i, (x0, y, b, big, speed) in enumerate(self.stars):
+            if i % step:
+                continue
             x = int((x0 - t * speed) % w)
             dst.set_at((x, y), (b, b, min(255, b + 24)))
             if big:
@@ -1251,9 +1346,9 @@ class Backdrop:
             pygame.draw.line(dst, col, (x, y - ln), (x, y + ln), 1)
             dst.set_at((int(x), int(y)), (255, 255, 255))
 
-    def _draw_clouds(self, dst, t):
+    def _draw_clouds(self, dst, t, limit):
         w = self.size[0]
-        for surf, x0, y, speed, cw in self.clouds:
+        for surf, x0, y, speed, cw in self.clouds[:limit]:
             x = (x0 - t * speed) % (w + cw) - cw
             dst.blit(surf, (int(x), int(y)))
 
@@ -1269,13 +1364,16 @@ class Backdrop:
             col = mix((20, 24, 60), mix((255, 255, 255), (80, 90, 170), k / 8), fade)
             pygame.draw.line(dst, col, (hx - vx * a, hy - vy * a), (hx - vx * b, hy - vy * b), max(1, 3 - k // 3))
 
-    def draw(self, dst, cam_x, cam_y, t=0.0):
+    def draw(self, dst, cam_x, cam_y, t=0.0, quality="alto"):
+        profile = GRAPHICS_PROFILES[quality]
         dst.blit(self.sky, (0, 0))
-        self._schedule(t)
-        self._draw_stars(dst, t)
-        self._draw_clouds(dst, t)
-        self._draw_meteor(dst, t)
-        for factor, layer, h_max in self.layers:
+        if quality != "bajo":
+            self._schedule(t)
+        self._draw_stars(dst, t, profile["stars_step"])
+        self._draw_clouds(dst, t, profile["clouds"])
+        if quality == "alto":
+            self._draw_meteor(dst, t)
+        for factor, layer, h_max in self.layers[:profile["layers"]]:
             off = int(cam_x * factor) % self.tile_w
             y = int(self.horizon + 2 - h_max + cam_y * factor * 0.5)
             dst.blit(layer, (-off, y))
@@ -1308,6 +1406,46 @@ def draw_step_icon(dst, kind, center, color, t):
     else:  
         draw_bulb(dst, (cx, cy + 3), 0.55 + 0.45 * math.sin(t * 2.2), t, True)
 
+def draw_bonus_icon(dst, kind, center, color, t):
+    """Icono animado y acotado al espacio reservado en cada tarjeta de bonificación."""
+    cx, cy = int(center[0]), int(center[1])
+    if kind == "doble":
+        pulse = 1.0 + 0.10 * math.sin(t * 4.0)
+        points = []
+        for i in range(16):
+            angle = t * 0.7 - math.pi / 2 + i * math.tau / 16
+            radius = (10 if i % 2 == 0 else 7) * pulse
+            points.append((cx + math.cos(angle) * radius, cy + math.sin(angle) * radius))
+        pygame.draw.polygon(dst, color, points, 2)
+        aa_circle(dst, color, (cx, cy), 2)
+    elif kind == "congelar":
+        rotation = t * 0.65
+        for i in range(3):
+            angle = rotation + i * math.pi / 3
+            dx, dy = math.cos(angle), math.sin(angle)
+            ex, ey = cx + dx * 10, cy + dy * 10
+            pygame.draw.line(dst, color, (cx - dx * 10, cy - dy * 10), (ex, ey), 2)
+            for direction in (-1, 1):
+                bx, by = cx + dx * 6 * direction, cy + dy * 6 * direction
+                for side in (-1, 1):
+                    branch = angle + math.pi + side * 0.75
+                    pygame.draw.line(
+                        dst, color, (bx, by),
+                        (bx + math.cos(branch) * 4, by + math.sin(branch) * 4), 1,
+                    )
+    elif kind == "tiempo":
+        pulse = 1.0 + 0.08 * math.sin(t * 3.0)
+        pygame.draw.circle(dst, color, (cx, cy), round(10 * pulse), 2)
+        hand = t * 1.8
+        pygame.draw.line(dst, color, (cx, cy), (cx + math.cos(hand) * 6, cy + math.sin(hand) * 6), 2)
+        pygame.draw.line(
+            dst, color, (cx, cy),
+            (cx + math.cos(hand - math.pi / 2) * 8, cy + math.sin(hand - math.pi / 2) * 8), 1,
+        )
+        aa_circle(dst, color, (cx, cy), 2)
+    else:
+        draw_bulb(dst, (cx, cy - 4), 0.55 + 0.45 * math.sin(t * 2.2), t, True)
+
 class Game:
     def __init__(self):
         pygame.init()
@@ -1321,10 +1459,16 @@ class Game:
         self.ui = UI()
         self.store = ScoreStore()
         self.rows = self.store.ranking(10)
+        self.settings_store = GameSettings()
+        self.graphics_quality = self.settings_store.load_quality()
+        self.graphics_note = None
         self.cursor = pygame.SYSTEM_CURSOR_ARROW
         self.last_phrase = {}
         self.state = MENU
+        self.menu_page = "inicio"
         self.scroll = 0.0
+        self.tutorial_scroll = 0.0
+        self.tutorial_drag_start = None
         self.clock_t = 0.0
         self.camera = Camera()
         self.match = Match()
@@ -1403,7 +1547,7 @@ class Game:
         pygame.draw.line(self.reticle, (*C_ACCENT, 30), (240, 0), (240, 480), 1)
         self.reticle = self.reticle.convert_alpha()
 
-        style = ui.fit_style("CALCULATION", UI.SANS, 560, 84)
+        style = ui.fit_style("CALCULATION", UI.SANS, 500, 70)
         grad = vertical_gradient((560, ui.styles[style][0].get_height()), [(0, C_ACCENT), (1, C_VIOLET)])
         self.title_a = ui.surf("ARTILLERY", style, C_TEXT)
         self.title_b = ui.surf("CALCULATION", style, (255, 255, 255)).copy()
@@ -1436,9 +1580,18 @@ class Game:
 
     def _build_widgets(self):
         a = ANSWER_RECT
-        self.menu_input = TextInput((64, 424, 340, 52), "Ingrese su nombre", NAME_MAX, False)
+        self.menu_input = TextInput((64, 448, 500, 54), "Ingrese su nombre", NAME_MAX, False)
         self.menu_input.focused = True
-        self.play_btn = Button((64, 516, 340, 60), "Jugar", "primary", icon="play")
+        self.play_btn = Button((64, 526, 500, 58), "Jugar", "primary", icon="play")
+        nav_x, nav_y, nav_w, nav_gap = 648, 50, 140, 8
+        self.menu_tabs = [
+            Button((nav_x + i * (nav_w + nav_gap), nav_y, nav_w, 48), label, "ghost", style="small_b")
+            for i, label in enumerate(("INICIO", "INSTRUCCIONES", "CLASIFICACIÓN", "GRÁFICOS"))
+        ]
+        self.quality_buttons = [
+            Button((676 + i * 176, 322, 164, 64), label, "ghost", style="body_b")
+            for i, label in enumerate(("BAJO", "MEDIO", "ALTO"))
+        ]
         self.angle_input = TextInput((a.x + 16, a.y + 40, 226, 48), "0.00", 7, True, sticky=True, suffix="°")
         self.fire_btn = Button((a.x + 254, a.y + 40, 126, 48), "Disparar", "fire")
         self.bulb = BulbButton((a.x + 14, a.y + 98))
@@ -1628,7 +1781,7 @@ class Game:
             self.fails += 1
             res["tip"] = self.maybe_tip(res)
             if (cat == "lejos" or PENALIZE_NEAR_MISS) and not self.balloons_popped_this_shot:
-                self.time_penalty()   # acertar NUNCA descuenta tiempo
+                self.time_penalty()
             self.maybe_spawn_balloons()
         color = CAT_COLOR[cat]
         if hit:
@@ -1665,7 +1818,7 @@ class Game:
         if random.random() >= min(0.8, 0.5 + 0.1 * (self.fails - BALLOON_MIN_FAILS)):
             return
         p = self.problem
-        z, x0 = camera_goal(p)          # vista en reposo: así quedan visibles mientras se apunta
+        z, x0 = camera_goal(p)
         tsx, tsy = (p.side * p.dist - x0) * z, GROUND_Y_REF - p.height * z
         gsx = -x0 * z
         placed = []
@@ -1675,11 +1828,11 @@ class Game:
                 wx, wy = sx / z + x0, (GROUND_Y_REF - sy) / z
                 ground_sy = GROUND_Y_REF - terrain_height(wx, p.plateau, p.dist, p.side) * z
                 if sy > ground_sy - BALLOON_R - 40:
-                    continue                                    # dentro o pegado al terreno
+                    continue
                 if math.hypot(sx - tsx, sy - tsy) < 80 or (abs(sx - tsx) < 45 and sy > tsy):
-                    continue                                    # tapa el blanco o su poste
+                    continue
                 if math.hypot(sx - gsx, sy - GROUND_Y_REF) < 100:
-                    continue                                    # pegado al cañón
+                    continue
                 if any(math.hypot(sx - qx, sy - qy) < 2 * BALLOON_R + 24 for qx, qy in placed):
                     continue
                 placed.append((sx, sy))
@@ -1703,7 +1856,7 @@ class Game:
         self.balloon_idx = len(path)
         if not self.balloons or len(pts) < 2:
             return
-        reach = BALLOON_R / self.camera.zoom + BULLET_R      # radio del globo en metros + radio de la bala
+        reach = BALLOON_R / self.camera.zoom + BULLET_R
         for b in list(self.balloons):
             c = (b["wx"], b["wy"])
             if any(seg_point_dist(u, v, c) <= reach for u, v in zip(pts, pts[1:])):
@@ -1729,7 +1882,6 @@ class Game:
             self.time_left, text = min(TIME_MAX, self.time_left + BALLOON_TIME_BONUS), f"+{BALLOON_TIME_BONUS:.0f} s"
         wx, wy, z = b["wx"], b["wy"], self.camera.zoom
         self.pops.append({"x": wx, "y": wy, "text": text, "color": color, "age": 0.0, "life": 1.5})
-        # Animación de explosión: cáscara que se rompe + onda + fragmentos y chispas
         self.pop_fx.append({"x": wx, "y": wy, "color": color, "age": 0.0, "life": 0.5})
         self.rings.append([wx, wy, 0.0, 0.55, color, 62])
         self.rings.append([wx, wy, 0.0, 0.32, (255, 255, 255), 36])
@@ -1798,12 +1950,17 @@ class Game:
             self.save_note = ("No se pudo escribir en la carpeta save_prof", C_BAD)
 
     def burst(self, x, y, n, speed, life, size, colors, gravity=30.0, glow=False, spread=(0, 360)):
-        for _ in range(n):
+        profile = GRAPHICS_PROFILES[self.graphics_quality]
+        count = min(profile["max_particles"], max(1, round(n * profile["particles"])))
+        overflow = len(self.particles) + count - profile["max_particles"]
+        if overflow > 0:
+            self.particles = self.particles[overflow:]
+        for _ in range(count):
             a = math.radians(random.uniform(*spread))
             v = random.uniform(*speed)
             self.particles.append(Particle(x, y, math.cos(a) * v, math.sin(a) * v,
                                            random.uniform(*life), random.uniform(*size),
-                                           random.choice(colors), gravity, glow))
+                                           random.choice(colors), gravity, glow and profile["glow"]))
 
     def view(self, x, y):
         return (x - self.camera.x0) * self.camera.zoom, GROUND_Y_REF - y * self.camera.zoom
@@ -1819,7 +1976,10 @@ class Game:
             return
         if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
             if self.state == MENU:
-                self.running = False
+                if self.menu_page != "inicio":
+                    self.menu_page = "inicio"
+                else:
+                    self.running = False
             else:
                 self.go_menu()
             return
@@ -1831,8 +1991,73 @@ class Game:
 
     def event_menu(self, e):
         self.menu_input.handle(e)
-        if self.play_btn.handle(e) or self._is_enter(e):
-            self.start_match()
+        for i, button in enumerate(self.menu_tabs):
+            if button.handle(e):
+                self.menu_page = ("inicio", "instrucciones", "clasificacion", "graficos")[i]
+                self.tutorial_scroll = 0.0
+                self.tutorial_drag_start = None
+                self.menu_input.focused = False
+                return
+        if self.menu_page == "instrucciones":
+            viewport = self._tutorial_viewport()
+            pointer = e.pos if hasattr(e, "pos") else self.mouse_pos()
+            max_scroll = self._tutorial_max_scroll()
+            if e.type == pygame.MOUSEWHEEL and viewport.collidepoint(pointer):
+                self.tutorial_scroll = clamp(self.tutorial_scroll - e.y * 48, 0, max_scroll)
+                return
+            if e.type == pygame.MOUSEBUTTONDOWN and e.button in (4, 5) and viewport.collidepoint(pointer):
+                self.tutorial_scroll = clamp(
+                    self.tutorial_scroll + (48 if e.button == 4 else -48), 0, max_scroll
+                )
+                return
+            if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and viewport.collidepoint(pointer):
+                self.tutorial_drag_start = (pointer[1], self.tutorial_scroll)
+                return
+            if e.type == pygame.MOUSEBUTTONUP and e.button == 1:
+                self.tutorial_drag_start = None
+            elif e.type == pygame.MOUSEMOTION and self.tutorial_drag_start is not None:
+                start_y, start_scroll = self.tutorial_drag_start
+                self.tutorial_scroll = clamp(start_scroll + start_y - pointer[1], 0, max_scroll)
+                return
+            elif e.type == pygame.FINGERDOWN:
+                finger_pos = (
+                    int(e.x * self.display.get_width() - self.ox),
+                    int(e.y * self.display.get_height() - self.oy),
+                )
+                if viewport.collidepoint(finger_pos):
+                    self.tutorial_drag_start = (finger_pos[1], self.tutorial_scroll)
+                    return
+            elif e.type == pygame.FINGERMOTION and self.tutorial_drag_start is not None:
+                finger_y = int(e.y * self.display.get_height() - self.oy)
+                start_y, start_scroll = self.tutorial_drag_start
+                self.tutorial_scroll = clamp(start_scroll + start_y - finger_y, 0, max_scroll)
+                return
+            elif e.type == pygame.FINGERUP:
+                self.tutorial_drag_start = None
+        if self.menu_page == "inicio":
+            if self.play_btn.handle(e) or self._is_enter(e):
+                self.start_match()
+        elif self.menu_page == "graficos":
+            for quality, button in zip(GRAPHICS_QUALITY, self.quality_buttons):
+                if button.handle(e):
+                    self.set_graphics_quality(quality)
+                    return
+
+    def set_graphics_quality(self, quality):
+        self.graphics_quality = quality
+        limit = GRAPHICS_PROFILES[quality]["max_particles"]
+        self.particles = self.particles[-limit:]
+        self.graphics_note = (
+            f"Calidad {quality} guardada."
+            if self.settings_store.save_quality(quality)
+            else "Se aplicó el nivel, pero no se pudo guardar la preferencia."
+        )
+
+    def _menu_buttons(self):
+        buttons = self.menu_tabs + [self.play_btn]
+        if self.menu_page == "graficos":
+            buttons += self.quality_buttons
+        return buttons
 
     def event_play(self, e):
         if (self.phase == FLIGHT and e.type == pygame.MOUSEBUTTONDOWN and e.button == 1):
@@ -1872,11 +2097,15 @@ class Game:
 
     def update(self, dt, real=None):
         self.clock_t += dt
-        self.scroll += dt * 16
+        if self.graphics_quality != "bajo":
+            self.scroll += dt * 16
         mouse = self.mouse_pos()
         if self.state == MENU:
             self.menu_input.update(dt)
-            self.play_btn.update(dt, mouse)
+            for button in self._menu_buttons():
+                button.update(dt, mouse)
+            for quality, button in zip(GRAPHICS_QUALITY, self.quality_buttons):
+                button.kind = "primary" if quality == self.graphics_quality else "ghost"
         elif self.state == PLAY:
             self.update_play(dt, mouse, dt if real is None else real)
         else:
@@ -1974,7 +2203,7 @@ class Game:
 
     def active_buttons(self):
         if self.state == MENU:
-            return [self.play_btn]
+            return self._menu_buttons()
         if self.state == RESULT:
             return [self.save_btn, self.again_btn, self.menu_btn]
         if self.phase == SOLVED:
@@ -2064,7 +2293,7 @@ class Game:
         card = ui.rounded((w, h), 14, (46, 8, 18, 248), (*C_BAD, 235), 2).copy()
         card.blit(head, head.get_rect(midtop=(w // 2, 8)))
         card.blit(amount, amount.get_rect(midtop=(w // 2, 8 + head.get_height() + 2)))
-        if age < 0.25:                                           # entrada con pequeño rebote
+        if age < 0.25:
             sc = 0.7 + 0.3 * ease_out_back(age / 0.25)
             card = pygame.transform.smoothscale(card, (max(1, int(w * sc)), max(1, int(h * sc))))
         card.set_alpha(int(255 * k))
@@ -2073,7 +2302,7 @@ class Game:
     def draw_field(self):
         surf = self.field_surf
         cam = self.camera
-        self.field_bd.draw(surf, cam.x0 * cam.zoom, 0, self.clock_t)
+        self.field_bd.draw(surf, cam.x0 * cam.zoom, 0, self.clock_t, self.graphics_quality)
         self.draw_terrain(surf)
         self.draw_markers(surf)
         self.draw_target(surf)
@@ -2209,7 +2438,7 @@ class Game:
             x, y = self.view(b["wx"], b["wy"])
             if not -60 < x < FW + 60 or not -60 < y < FH + 60:
                 continue
-            y += 3.0 * math.sin(t * 2.2 + b["ph"])            # balanceo solo visual
+            y += 3.0 * math.sin(t * 2.2 + b["ph"])
             r = BALLOON_R * ease_out_back(clamp(b["age"] / 0.4, 0.0, 1.0))
             color = b["color"]
             pygame.draw.lines(surf, (150, 160, 210), False,
@@ -2227,17 +2456,17 @@ class Game:
                 ui.text(surf, f"+{BALLOON_TIME_BONUS:.0f}", "small_b", C_DARK, (x, y), "center")
             else:
                 ui.text(surf, "?", "h1", C_DARK, (x, y), "center")
-        for fx in self.pop_fx:                                  # explosión del globo
+        for fx in self.pop_fx:
             k = fx["age"] / fx["life"]
             e = ease_out_cubic(k)
             x, y = self.view(fx["x"], fx["y"])
             color, dark = fx["color"], (18, 20, 50)
             add_glow(surf, (x, y), 8 * max(3, int((26 + 40 * e) / 8)), fade_color(color, 0.8 * (1.0 - k)))
-            if k < 0.28:                                        # cáscara que se infla, se blanquea y revienta
+            if k < 0.28:
                 aa_circle(surf, mix(color, (255, 255, 255), k / 0.28), (x, y), BALLOON_R * (1.0 + 0.55 * k / 0.28))
             pygame.draw.circle(surf, mix(color, dark, k), (int(x), int(y)),
                                int(BALLOON_R * (0.8 + 1.5 * e)), max(1, int(5 * (1.0 - k))))
-            for i in range(10):                                 # jirones de goma que salen disparados
+            for i in range(10):
                 a = i * math.tau / 10 + fx["x"] * 0.37
                 d, sz = BALLOON_R * (0.4 + 2.0 * e), BALLOON_R * 0.40 * (1.0 - k)
                 cx, cy = x + math.cos(a) * d, y + math.sin(a) * d
@@ -2352,8 +2581,6 @@ class Game:
         ui.text(s, f"Semilla X_{{0}} = {seed} · respuesta: X que ya no cambia", "tiny", C_MUTED,
                 (r.x + 18, r.y + 127))
 
-        # Tabla de iteraciones: SIEMPRE visible. Cada pista descubre nuevas celdas (las nuevas
-        # se resaltan un momento); las ocultas muestran puntos. La respuesta cae en una de las 3 filas.
         top = r.y + 148
         box = pygame.Rect(r.x + 12, top - 4, r.w - 24, r.bottom - top - 2)
         s.blit(ui.rounded(box.size, 10, (10, 14, 34, 255), (70, 86, 160), 1), box.topleft)
@@ -2536,7 +2763,7 @@ class Game:
     def draw_wide_backdrop(self):
         """Cielo y montañas a pantalla completa (también detrás de los bordes del lienzo)."""
         d = self.display
-        self.menu_bd.draw(d, self.scroll, 0, self.clock_t)
+        self.menu_bd.draw(d, self.scroll, 0, self.clock_t, self.graphics_quality)
         d.blit(self.menu_ground, (0, self.oy + HEIGHT - self.menu_ground.get_height()))
         if self.canvas[1] > self.oy + HEIGHT:
             d.fill((8, 11, 28), (0, self.oy + HEIGHT, self.canvas[0], self.canvas[1] - self.oy - HEIGHT))
@@ -2546,71 +2773,239 @@ class Game:
         self.draw_wide_backdrop()
         self.display.blit(self.menu_fade, (0, 0))
         s.blit(self.reticle, self.reticle.get_rect(center=(330, 400)))
+        ui.card(s, MENU_INTRO, accent=C_ACCENT, fill=(8, 13, 30, 238),
+                border=(92, 113, 180, 90))
         draw_logo(s, (84, 78), 20)
         ui.text(s, "SIMULADOR BALÍSTICO  ·  MÉTODOS NUMÉRICOS", "label", C_ACCENT, (120, 70))
-        s.blit(self.title_a, (60, 108))
-        s.blit(self.title_b, (60, 108 + self.title_a.get_height() - 6))
-        y = 108 + self.title_a.get_height() * 2 + 12
-        ui.paragraph(s, "Dispara con matemáticas: encuentra el ángulo exacto con Newton-Raphson y no falles al blanco.",
-                     "lead", C_MUTED, (64, y), 500, gap=4)
-        ui.text(s, "NOMBRE DEL ARTILLERO  ·  opcional", "label", C_MUTED, (64, 402))
+        title_y = 112
+        s.blit(self.title_a, (64, title_y))
+        s.blit(self.title_b, (64, title_y + self.title_a.get_height() - 6))
+        y = title_y + self.title_a.get_height() * 2 + 8
+        ui.paragraph(
+            s,
+            "Resuelve el ángulo de tiro con Newton-Raphson y apunta al blanco.",
+            "lead",
+            C_MUTED,
+            (64, y),
+            500,
+            gap=4,
+        )
+        pygame.draw.line(s, (60, 74, 140), (64, 394), (568, 394), 1)
+        ui.text(s, "NOMBRE DEL ARTILLERO  ·  OPCIONAL", "label", C_MUTED, (64, 416))
         self.menu_input.draw(ui, s)
         self.play_btn.draw(ui, s)
-        ui.text(s, "ENTER para jugar  ·  ESC para salir", "tiny", C_MUTED, (64, 592))
-        self.draw_tutorial(s)
-        self.draw_ranking(s, MENU_RANK, "CLASIFICACIÓN  ·  PROMEDIO POR PARTIDA")
+        ui.text(s, "10 RONDAS  ·  10 MINUTOS  ·  F11 PANTALLA COMPLETA",
+                "tiny", C_MUTED, (64, 604))
+        if self.menu_page == "inicio":
+            quality_color = {
+                "bajo": C_GOOD,
+                "medio": C_ACCENT,
+                "alto": C_AMBER,
+            }[self.graphics_quality]
+            aa_circle(s, quality_color, (68, 644), 3)
+            ui.text(s, f"CALIDAD: {self.graphics_quality.upper()}", "tiny_b",
+                    quality_color, (78, 644), "midleft")
+        ui.card(s, MENU_PANEL, accent=C_ACCENT, fill=(8, 13, 30, 244), border=(92, 113, 180, 90))
+        self.draw_menu_tabs(s)
+        if self.menu_page == "inicio":
+            self.draw_menu_home(s)
+        elif self.menu_page == "instrucciones":
+            self.draw_tutorial(s)
+        elif self.menu_page == "clasificacion":
+            self.draw_ranking(s, MENU_RANK, "MEJORES ARTILLEROS  ·  PROMEDIO POR PARTIDA")
+        else:
+            self.draw_menu_graphics(s)
+
+    def draw_menu_home(self, s):
+        ui = self.ui
+        leaderboard = MENU_RANK
+        ui.card(s, leaderboard, accent=C_AMBER)
+        ui.text(s, "TOP 4 ARTILLEROS", "h2", C_TEXT,
+                (leaderboard.x + 20, leaderboard.y + 22))
+        ui.text(s, "Mejores promedios por partida", "small", C_MUTED,
+                (leaderboard.x + 20, leaderboard.y + 51))
+        pygame.draw.line(
+            s, (60, 74, 140),
+            (leaderboard.x + 18, leaderboard.y + 78),
+            (leaderboard.right - 18, leaderboard.y + 78), 1,
+        )
+        if not self.rows:
+            ui.text(s, "Aún no hay puntuaciones.", "body_b", C_TEXT,
+                    leaderboard.center, "center")
+            ui.text(s, "Completa una partida para aparecer aquí.", "small", C_MUTED,
+                    (leaderboard.centerx, leaderboard.centery + 28), "center")
+        else:
+            medals = (C_GOLD, (196, 206, 230), (214, 134, 78), C_MUTED)
+            for i, row in enumerate(self.rows[:4]):
+                top = leaderboard.y + 94 + i * 94
+                entry = pygame.Rect(leaderboard.x + 14, top, leaderboard.w - 28, 84)
+                if i == 0:
+                    fill = (46, 37, 20, 220)
+                    border = (*medals[i], 110)
+                else:
+                    fill = (18, 26, 62, 220)
+                    border = (60, 74, 140)
+                s.blit(ui.rounded(entry.size, 12, fill, border), entry.topleft)
+                aa_circle(s, medals[i], (entry.x + 25, entry.y + 27), 13)
+                ui.text(s, str(i + 1), "small_b", C_DARK if i < 3 else C_TEXT,
+                        (entry.x + 25, entry.y + 27), "center")
+                name = row["name"]
+                name_max_width = entry.w - 138
+                while name and ui.measure(name, "body_b") > name_max_width:
+                    name = name[:-1]
+                if name != row["name"]:
+                    name = name.rstrip() + "…"
+                ui.text(s, name, "body_b", C_TEXT, (entry.x + 48, entry.y + 13))
+                ui.text(s, f"{row['games']} PART.  ·  {row['hits']} ACIERTOS",
+                        "tiny", C_MUTED, (entry.x + 48, entry.y + 43))
+                ui.text(s, "PROM.", "tiny", C_MUTED,
+                        (entry.right - 12, entry.y + 14), "topright")
+                ui.text(s, f"{row['average']:.1f}", "mono_b", C_AMBER,
+                        (entry.right - 12, entry.y + 39), "topright")
+        ui.text(s, "Clasificación ordenada por promedio de puntos.",
+                "tiny", C_MUTED, (leaderboard.x + 20, leaderboard.bottom - 25))
+
+    def draw_menu_tabs(self, s):
+        labels = ("inicio", "instrucciones", "clasificacion", "graficos")
+        for page, button in zip(labels, self.menu_tabs):
+            active = page == self.menu_page
+            if button.hover:
+                alpha = int(20 + 20 * button.hover)
+                s.blit(
+                    self.ui.rounded(button.rect.size, 12, (*C_ACCENT, alpha)),
+                    button.rect.topleft,
+                )
+            color = C_ACCENT if active else mix(C_MUTED, C_TEXT, button.hover * 0.65)
+            self.ui.text(s, button.label, button.style, color, button.rect.center, "center")
+            if active:
+                pygame.draw.line(
+                    s, C_ACCENT,
+                    (button.rect.x + 12, button.rect.bottom - 2),
+                    (button.rect.right - 12, button.rect.bottom - 2), 3,
+                )
+
+    def draw_menu_graphics(self, s):
+        ui, rect = self.ui, MENU_QUALITY
+        ui.card(s, rect, accent=C_AMBER)
+        ui.text(s, "RENDIMIENTO GRÁFICO", "h2", C_TEXT, (rect.x + 24, rect.y + 28))
+        ui.paragraph(
+            s,
+            "Selecciona el nivel que mejor se adapte a tu equipo. El cambio se aplica al instante y se guarda para tu próxima partida.",
+            "body", C_MUTED, (rect.x + 24, rect.y + 66), rect.w - 48, gap=4,
+        )
+        descriptions = {
+            "bajo": ("MÁXIMA FLUIDEZ", "Menos partículas, brillos y capas animadas.", C_GOOD),
+            "medio": ("EQUILIBRADO", "Buenos efectos con un consumo moderado.", C_ACCENT),
+            "alto": ("MÁXIMO DETALLE", "Todos los efectos y animaciones activados.", C_AMBER),
+        }
+        for quality, button in zip(GRAPHICS_QUALITY, self.quality_buttons):
+            title, detail, color = descriptions[quality]
+            i = GRAPHICS_QUALITY.index(quality)
+            button.draw(ui, s)
+            card = pygame.Rect(676 + i * 176, 402, 164, 112)
+            s.blit(ui.rounded(card.size, 12, (16, 23, 54, 235), (*color, 120), 1), card.topleft)
+            ui.text(s, title, "tiny", color, (card.centerx, card.y + 24), "center")
+            ui.paragraph(s, detail, "tiny", C_TEXT, (card.x + 12, card.y + 48), card.w - 24, gap=2)
+        fps_index = 0 if sys.platform == "emscripten" else 1
+        selected_fps = GRAPHICS_PROFILES[self.graphics_quality]["fps"][fps_index]
+        ui.text(s, f"Nivel activo: {self.graphics_quality.upper()}  ·  Límite: {selected_fps} FPS",
+                "body_b", C_TEXT, (rect.x + 24, 548))
+        if self.graphics_note:
+            color = C_GOOD if self.graphics_note.endswith("guardada.") else C_WARN
+            ui.text(s, self.graphics_note, "small", color, (rect.x + 24, 582))
+        else:
+            ui.text(s, "La preferencia queda guardada en este dispositivo.", "small", C_MUTED,
+                    (rect.x + 24, 582))
+        ui.text(s, "Pulsa Esc para volver al inicio.", "tiny", C_MUTED, (rect.x + 24, 630))
 
     def draw_tutorial(self, s):
-        """Panel «¿Cómo se juega?»: 4 tarjetas con icono animado, resumen de puntos y la fórmula."""
-        ui, r = self.ui, MENU_TUTORIAL
-        t = self.clock_t
+        """Resume disparos, puntuación, pistas, penalizaciones y efectos de globos."""
+        ui, r, t = self.ui, MENU_TUTORIAL, self.clock_t
         ui.card(s, r, accent=C_ACCENT)
-        draw_logo(s, (r.x + 34, r.y + 29), 9)
-        ui.text(s, "¿CÓMO SE JUEGA?", "h2", C_TEXT, (r.x + 56, r.y + 28), "midleft")
-        ui.pill(s, "4 PASOS", C_ACCENT, r.right - 20, r.y + 18)
-        pygame.draw.line(s, (60, 74, 140), (r.x + 20, r.y + 48), (r.right - 20, r.y + 48), 1)
-
-        steps = (
-            (C_ACCENT, "target", "MIRA EL BLANCO",
-             "Puede estar cerca o lejos, arriba o abajo, a tu derecha o a tu izquierda."),
-            (C_VIOLET, "angle", "BUSCA EL ÁNGULO",
-             "Halla el ángulo del cañón (0° a 180°). Si fallas, la ecuación NO cambia: intenta de nuevo."),
-            (C_GOOD, "newton", "USA NEWTON-RAPHSON",
-             "La fórmula de abajo corrige un ángulo de prueba paso a paso. ¡La tabla guarda la respuesta!"),
-            (C_AMBER, "bulb", "PIDE AYUDA",
-             f"Bombilla: {MAX_HINTS} pistas (1 cada {HINT_COOLDOWN:.0f} s). Si fallas mucho salen globos con ayudas: ¡atraviésalos con la bala! Durante el vuelo, haz clic para acelerarla."),
+        ui.text(s, "CÓMO JUGAR", "h2", C_TEXT, (r.x + 24, r.y + 26))
+        ui.text(s, "10 rondas · 10 minutos · alcanza el blanco y suma puntos.", "small", C_MUTED,
+                (r.x + 24, r.y + 56))
+        ui.text(s, "RUEDA / ARRASTRA", "tiny", C_ACCENT, (r.right - 20, r.y + 60), "topright")
+        pygame.draw.line(s, (60, 74, 140), (r.x + 20, r.y + 78), (r.right - 20, r.y + 78), 1)
+        viewport = self._tutorial_viewport()
+        content_height = TUTORIAL_CONTENT_HEIGHT
+        max_scroll = max(0, content_height - viewport.h)
+        self.tutorial_scroll = clamp(self.tutorial_scroll, 0, max_scroll)
+        previous_clip = s.get_clip()
+        s.set_clip(viewport)
+        content_y = viewport.y - int(self.tutorial_scroll)
+        sections = (
+            (content_y + 6, 82, C_ACCENT, "target", "APUNTA Y DISPARA",
+             "Observa el terreno y usa la tabla Newton-Raphson para elegir un ángulo de 1° a 180°. Tras acertar, el siguiente reto inicia en 7 s."),
+            (content_y + 96, 104, C_GOOD, "angle", "PUNTOS Y PENALIZACIONES",
+             "Diana (±0.005°): +100 · acierto: +60 · fallo: 0. Fallos seguidos: −10 s y +5 s cada uno (máx. 60 s). Atrapa un globo en un tiro fallido para evitar esa pérdida de tiempo."),
+            (content_y + 208, 104, C_VIOLET, "newton", "PISTAS Y MULTIPLICADOR",
+             "Bombilla o Tab: hasta 7 pistas por ecuación, una cada 15 s. Cada pista normal y fallo resta 10% (mínimo 20%); la pista de globo es gratis. Desde 2 fallos, también puede salir un consejo."),
         )
-        gap = 8
-        cw = (r.w - 40 - gap) // 2
-        text_w = cw - 28
-        line_h = ui.styles["small"][0].get_linesize() + 2
-        lines = [len(ui.wrap(text, "small", text_w)) for _, _, _, text in steps]
-        row_h = [max(lines[0], lines[1]) * line_h + 44, max(lines[2], lines[3]) * line_h + 44]
-        y0 = r.y + 56
-        for i, (color, icon, title, text) in enumerate(steps):
+        for y, height, color, icon, title, text in sections:
+            box = pygame.Rect(r.x + 20, y, r.w - 40, height)
+            s.blit(ui.rounded(box.size, 11, (18, 26, 62, 235), (*color, 120)), box.topleft)
+            icon_area = pygame.Rect(box.right - 70, box.centery - 25, 50, 50)
+            s.blit(
+                ui.rounded(icon_area.size, 14, (*color, 18), (*color, 72)),
+                icon_area.topleft,
+            )
+            ui.text(s, title, "small_b", color, (box.x + 16, box.y + 12))
+            draw_step_icon(s, icon, icon_area.center, color, t)
+            ui.paragraph(
+                s, text, "small", C_TEXT, (box.x + 16, box.y + 38),
+                icon_area.left - box.x - 30, gap=2,
+            )
+
+        ui.text(s, "BONIFICACIONES · aparecen tras 3 fallos · duran 30 s",
+                "small_b", C_AMBER, (r.x + 22, content_y + 326))
+        balloons = (
+            (C_GOLD, "doble", "×2 PUNTOS", "Duplica el próximo acierto."),
+            (C_ACCENT, "congelar", "CONGELAR", "+20 s (acumula hasta 60 s)."),
+            (C_GOOD, "tiempo", "+45 s", "Tiempo extra (máximo 10 min)."),
+            (C_AMBER, "pista", "PISTA GRATIS", "No reduce el multiplicador."),
+        )
+        for i, (color, icon, title, detail) in enumerate(balloons):
             col, row = i % 2, i // 2
-            x = r.x + 20 + col * (cw + gap)
-            y = y0 + (row_h[0] + gap if row else 0)
-            h = row_h[row]
-            s.blit(ui.rounded((cw, h), 12, (18, 26, 62, 235), (*color, 120), 1), (x, y))
-            pygame.draw.rect(s, color, (x + 14, y, 40, 3), border_radius=2)
-            aa_circle(s, color, (x + 26, y + 21), 11)
-            ui.text(s, str(i + 1), "small_b", C_DARK, (x + 26, y + 21), "center")
-            ui.text(s, title, "small_b", color, (x + 44, y + 21), "midleft")
-            draw_step_icon(s, icon, (x + cw - 30, y + 21), color, t)
-            ui.paragraph(s, text, "small", C_TEXT, (x + 14, y + 38), text_w, gap=2)
-        sy = y0 + row_h[0] + row_h[1] + gap + 8
-        pills = (("BLANCO +60", C_GOOD), ("DIANA +100 · ±0.005°", C_GOLD), ("10 MIN · FALLAR −10 s", C_VIOLET))
-        x = r.x + 20
-        for text, color in pills:
-            w = ui.measure(text, "label") + 22
-            ui.pill(s, text, color, x + w, sy)
-            x += w + 8
-        box = pygame.Rect(r.x + 20, r.bottom - 70, r.w - 40, 58)
-        s.blit(ui.rounded(box.size, 12, (10, 14, 34, 255), (*C_ACCENT, 150), 1), box.topleft)
-        pygame.draw.rect(s, C_ACCENT, (box.x + 14, box.y, 40, 3), border_radius=2)
-        ui.text(s, "FÓRMULA DE ITERACIÓN", "label", C_MUTED, (box.x + 16, box.centery), "midleft")
-        s.blit(self.formula, self.formula.get_rect(center=(box.centerx + 70, box.centery)))
+            box = pygame.Rect(
+                r.x + 20 + col * 276, content_y + 352 + row * 64, 268, 58
+            )
+            s.blit(ui.rounded(box.size, 9, (18, 26, 62, 235), (*color, 110)), box.topleft)
+            icon_area = pygame.Rect(box.right - 54, box.centery - 21, 42, 42)
+            s.blit(
+                ui.rounded(icon_area.size, 12, (*color, 18), (*color, 72)),
+                icon_area.topleft,
+            )
+            draw_bonus_icon(s, icon, icon_area.center, color, t)
+            ui.text(s, title, "small_b", color, (box.x + 12, box.y + 8))
+            ui.text(s, detail, "tiny", C_TEXT, (box.x + 12, box.y + 33))
+        controls = pygame.Rect(r.x + 20, content_y + 488, r.w - 40, 76)
+        s.blit(ui.rounded(controls.size, 10, (18, 26, 62, 235), (*C_ACCENT, 100)), controls.topleft)
+        ui.text(s, "CONTROLES", "small_b", C_ACCENT, (controls.x + 12, controls.y + 8))
+        ui.paragraph(
+            s, "Enter: disparar/continuar · Tab o bombilla: pista · clic durante el vuelo: ×4 · Esc: volver.",
+            "small", C_TEXT, (controls.x + 12, controls.y + 32), controls.w - 24, gap=1,
+        )
+        s.set_clip(previous_clip)
+        if max_scroll:
+            track = pygame.Rect(r.right - 12, viewport.y, 3, viewport.h)
+            pygame.draw.rect(s, (48, 58, 94), track, border_radius=2)
+            thumb_height = max(28, round(track.h * viewport.h / content_height))
+            thumb_range = track.h - thumb_height
+            thumb_y = track.y + round(thumb_range * self.tutorial_scroll / max_scroll)
+            pygame.draw.rect(
+                s, C_ACCENT, (track.x, thumb_y, track.w, thumb_height), border_radius=2
+            )
+
+    @staticmethod
+    def _tutorial_viewport():
+        return pygame.Rect(
+            MENU_TUTORIAL.x + 10, MENU_TUTORIAL.y + 86,
+            MENU_TUTORIAL.w - 20, MENU_TUTORIAL.h - 102,
+        )
+
+    def _tutorial_max_scroll(self):
+        return max(0, TUTORIAL_CONTENT_HEIGHT - self._tutorial_viewport().h)
 
     def draw_result(self):
         s, ui, m = self.screen, self.ui, self.match
@@ -2654,7 +3049,8 @@ class Game:
 
     async def run(self):
         while self.running:
-            raw = self.clock.tick(FPS) / 1000.0
+            platform_fps = int(sys.platform != "emscripten")
+            raw = self.clock.tick(GRAPHICS_PROFILES[self.graphics_quality]["fps"][platform_fps]) / 1000.0
             for event in pygame.event.get():
                 self.handle_event(event)
             self.update(min(raw, 0.05), raw)
@@ -2663,6 +3059,10 @@ class Game:
 
 async def main():
     game = Game()
+    if sys.platform == "emscripten":
+        import platform
+
+        platform.document.body.classList.add("game-ready")
     try:
         await game.run()
     finally:

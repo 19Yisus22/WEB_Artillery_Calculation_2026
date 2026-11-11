@@ -1,16 +1,5 @@
-# /// script
-# dependencies = [
-#   "pygame-ce",
-# ]
-# ///
 import asyncio
 
-import pygame
+from artillery_calculation import main as run_game
 
-pygame.init()
-pygame.display.set_mode((1280, 720))
-
-from artillery_calculation import main
-
-
-asyncio.run(main())
+asyncio.run(run_game())
