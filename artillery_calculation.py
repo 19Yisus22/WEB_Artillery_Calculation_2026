@@ -27,9 +27,6 @@ else:
     except ImportError:
         gfxdraw = None
 
-# ---------------------------------------------------------------------------
-# Configuración de pantalla
-# ---------------------------------------------------------------------------
 
 WIDTH, HEIGHT = 1280, 720
 TITLE = "Artillery Calculation"
@@ -167,7 +164,6 @@ def lerp(a, b, t):
     return a + (b - a) * t
 
 def seg_point_dist(a, b, p):
-    """Distancia mínima del punto p al segmento a-b (para detectar que la bala atravesó un globo)."""
     ax, ay = a
     dx, dy = b[0] - ax, b[1] - ay
     length = dx * dx + dy * dy
@@ -202,17 +198,11 @@ def parse_angle(text):
     except ValueError:
         return None
 
-# ---------------------------------------------------------------------------
-# Física y aplicación del método de Newton-Raphson (cálculos y ecuaciones)
-# ---------------------------------------------------------------------------
 
 def coefficient(speed, dist):
-    """c = g·D² / (2·v0²), constante de la parábola evaluada en x = D."""
     return GRAVITY * dist ** 2 / (2.0 * speed ** 2)
 
 def f_angle(X, c, height, dist, side=1):
-    """f(X): error de altura de la bala al llegar al blanco; el ángulo (X) es la incógnita.
-    side = +1 blanco a la derecha, -1 a la izquierda; (X) se mide siempre desde la derecha."""
     t = side * math.tan(X)
     return dist * t - c * (1.0 + t * t) - height
 
@@ -229,8 +219,6 @@ class Step:
     nxt: float
 
 def newton_raphson(X0, c, height, dist, side=1, tol=1e-10, max_iter=25):
-    """Resuelve f(X) = 0 con Newton-Raphson desde la semilla X0 (ángulo inicial (X)).
-    Devuelve (raíz, iteraciones). Todo el cálculo se hace en radianes."""
     steps, X = [], X0
     for n in range(max_iter):
         fx, dfx = f_angle(X, c, height, dist, side), df_angle(X, c, dist, side)
@@ -245,7 +233,6 @@ def newton_raphson(X0, c, height, dist, side=1, tol=1e-10, max_iter=25):
     return X, steps
 
 def terrain_height(x, plateau, dist, side=1):
-    """Altura del terreno (m, relativa al cañón) bajo la coordenada x (positiva a la derecha)."""
     u = side * x
     base = -MUZZLE_MOUNT
     span = min(70.0 + 0.7 * max(0.0, plateau - base), max(30.0, dist - 65.0))
@@ -305,19 +292,13 @@ class Problem:
     title: str = ""
     story: str = ""
     tname: str = "BLANCO"
-    ans_row: int = 2 
+    ans_row: int = 2
 
 def height_cap(phi_deg):
-    """Altura máxima del blanco (m): cuanto mayor es el ángulo de tiro, más alto puede estar."""
     return 40.0 + 5.5 * max(0.0, phi_deg - 20.0)
 
 def make_problem(round_index, rng=random, avoid=None):
 
-    """Genera un problema válido: distancia 100-1000 m, altura variable, lado y contexto.
-    El ángulo (X) se mide desde la derecha (0°) hasta la izquierda (180°). Se parte de un
-    ángulo deseado y de la altura que ese ángulo permite (a 75° el blanco puede
-    estar mucho más alto que a 20°); de ahí se deduce la velocidad v0 y se recalcula la raíz
-    exacta. Solo se acepta si la trayectoria llega sin chocar con el terreno."""
 
     while True:
         if round_index == 0:
@@ -325,7 +306,7 @@ def make_problem(round_index, rng=random, avoid=None):
         else:
             side = rng.choices((1, -1), (7, 3))[0]
             group = rng.choices(("bajo", "alto"), (8, 3))[0]
-            weights = (1, 1, 4, 5) if group == "alto" else (2, 2, 4, 1) 
+            weights = (1, 1, 4, 5) if group == "alto" else (2, 2, 4, 1)
             kind = rng.choices(("plano", "valle", "colina", "cumbre"), weights)[0]
         target = 2 if round_index == 0 else rng.randrange(MAX_TABLE_ROWS)
         for _ in range(900):
@@ -372,7 +353,7 @@ def make_problem(round_index, rng=random, avoid=None):
             lo, hi = (3.0, 88.0) if side == 1 else (92.0, 177.0)
             if target == 0:
                 offset, digits = rng.uniform(-0.003, 0.003), 3
-            elif target == 1: 
+            elif target == 1:
                 offset, digits = rng.choice((-1, 1)) * (rng.uniform(0.2, 1.2) if arc == "bajo" else rng.uniform(0.1, 0.6)), 2
             else:
                 offset, digits = rng.choice((-1, 1)) * (rng.uniform(4.0, 9.0) if arc == "bajo" else rng.uniform(1.5, 5.0)), 0
@@ -394,7 +375,6 @@ def make_problem(round_index, rng=random, avoid=None):
                            dist, side, arc, title, story, tname, ans_row)
 
 def _span(root, width, rng):
-    """Intervalo de `width` grados que contiene a la raíz en una posición al azar."""
     start = math.floor(root - rng.uniform(0.15, 0.85) * width)
     return start, start + width
 
@@ -402,8 +382,6 @@ def fmt_deg(value):
     return f"{value:.3f}".rstrip("0").rstrip(".")
 
 def build_hints(p, rng=random):
-    """Siete pistas progresivas (título, texto, rango|None). Cada ecuación elige variantes
-    distintas al azar; solo la séptima revela el ángulo (X)."""
     root, seed = p.root_deg, p.seed_deg
     lo1 = math.floor(root)
     if p.side < 0 and p.arc == "alto":
@@ -430,7 +408,7 @@ def build_hints(p, rng=random):
         ("Dispara de prueba", f"Prueba cerca de {round(root / 10.0) * 10:.0f}° y mira si la bala queda corta o larga. "
                               "Luego corrige.", None),
     ))
-    if p.ans_row == 2:  
+    if p.ans_row == 2:
         th1 = math.degrees(p.steps[0].nxt)
         s3 = rng.choice((
             ("Usa la semilla", f"Empieza con la semilla X_{{0}} = {fmt_deg(seed)}°. La tabla muestra 3 iteraciones "
@@ -443,7 +421,7 @@ def build_hints(p, rng=random):
             ("Aplica la fórmula", f"Si usas la fórmula una vez obtienes X_{{1}} = {th1:.3f}°. "
                                   "Pruébalo o sigue corrigiendo.", None),
         ))
-    else: 
+    else:
         s3 = rng.choice((
             ("Lee la tabla", "La tabla muestra 3 iteraciones seguidas. Cuando X casi no cambia de una fila a otra, "
                              "ahí está la respuesta.", None),
@@ -472,13 +450,11 @@ def build_hints(p, rng=random):
     return [(*s1, None), s2, s3, s4, s5, s6, s7]
 
 def reveal_order(ans_row, total=MAX_TABLE_ROWS):
-    """Orden en que las pistas destapan la tabla: primero f(X) y f'(X) de cada fila y luego X.
-    La X de la fila de la respuesta (y las siguientes) solo aparece con la última pista."""
     order = [3 * r + c for r in range(total) for c in (1, 2)]
     return order + [3 * r for r in range(ans_row)]
 
 def cells_revealed(hints, ans_row, total=MAX_TABLE_ROWS):
- 
+
     if hints <= 0:
         return frozenset()
     if hints >= MAX_HINTS:
@@ -489,7 +465,7 @@ def cells_revealed(hints, ans_row, total=MAX_TABLE_ROWS):
 class Shot:
 
     def __init__(self, angle_deg, problem):
-        self.X = math.radians(angle_deg)  
+        self.X = math.radians(angle_deg)
         self.problem = problem
         self.t = 0.0
         self.pos = (0.0, 0.0)
@@ -497,8 +473,8 @@ class Shot:
         self.path_t = 0.0
         self.kind = None
         self.impact = None
-        self.dist = math.hypot(problem.dist, problem.height)  
-        self.best = self.dist  
+        self.dist = math.hypot(problem.dist, problem.height)
+        self.best = self.dist
         self.best_pos = self.pos
         self.inside = False
 
@@ -509,7 +485,7 @@ class Shot:
     def advance(self, dt):
         p = self.problem
         factor = TIME_SCALE * (2.4 if abs(self.pos[0]) > p.dist + 150.0 else 1.0)
-        tx = p.side * p.dist 
+        tx = p.side * p.dist
         goal = self.t + dt * factor
         touch = BOARD_RADIUS + BULLET_R
         while self.t < goal and not self.done:
@@ -527,7 +503,7 @@ class Shot:
             if self.dist <= touch:
                 self.inside = True
             if self.inside and self.dist > prev:
- 
+
                 self.kind, self.impact = "target", self.best_pos
                 self.pos = self.best_pos
                 self.path.append(self.best_pos)
@@ -539,8 +515,6 @@ class Shot:
                 self.kind, self.impact = "lost", self.pos
 
 def judge(shot, error_deg):
-    """Categoría del disparo. Tocar el blanco es acierto; la diana exige el ángulo (X) exacto:
-    a lo sumo DIANA_TOL grados (5 milésimas) de diferencia con la respuesta."""
     if shot.kind == "target":
         return "diana" if error_deg <= DIANA_TOL else "acierto"
     return "cerca" if shot.best <= NEAR_MISS_R else "lejos"
@@ -579,12 +553,12 @@ BALLOON_KINDS = (("doble", C_GOLD), ("congelar", C_ACCENT), ("tiempo", C_GOOD), 
 @dataclass
 class Match:
     points: int = 0
-    bulls: int = 0   
-    touches: int = 0  
-    near: int = 0   
-    far: int = 0   
+    bulls: int = 0
+    touches: int = 0
+    near: int = 0
+    far: int = 0
     hints: int = 0
-    shots: int = 0  
+    shots: int = 0
 
     @property
     def hits(self):
@@ -598,7 +572,6 @@ def clean_name(raw):
     return " ".join(raw.split())[:NAME_MAX]
 
 class ScoreStore:
-    """Estadísticas por jugador en cookies (web) o save_prof/scores.json (escritorio)."""
 
     def __init__(self, path=None):
         self.path = Path(path) if path else SAVE_FILE
@@ -657,8 +630,6 @@ class ScoreStore:
         return rows[:limit]
 
     def save_match(self, name, points, hits, attempts):
-        """Guarda UN registro por jugador. Devuelve "ok", "exists" (nombre ya registrado),
-        "invalid" (sin nombre) o "error" (no se pudo escribir)."""
         name = clean_name(name)
         if not name:
             return "invalid"
@@ -692,7 +663,6 @@ class ScoreStore:
         return "ok"
 
 class GameSettings:
-    """Preferencias visuales en una cookie (web) o en save_prof/settings.json."""
 
     def __init__(self):
         self.path = SAVE_DIR / "settings.json"
@@ -1080,16 +1050,22 @@ def add_glow(dst, pos, radius, color):
     dst.blit(glow_surface(radius, tuple(color)), (pos[0] - radius, pos[1] - radius),
              special_flags=pygame.BLEND_RGB_ADD)
 
+ICON_PX = 28
+
 @lru_cache(maxsize=32)
 def button_icon_surface(name, color, accent):
-    scale = 3
+    scale = 4
     size = 24 * scale
     icon = pygame.Surface((size, size), pygame.SRCALPHA)
     fg = (*color, 255)
     detail = (*accent, 255)
+    clear = (0, 0, 0, 0)
 
     def point(x, y):
         return round(x * scale), round(y * scale)
+
+    def box(x, y, w, h):
+        return pygame.Rect(point(x, y), (round(w * scale), round(h * scale)))
 
     def line(points, stroke=1.6, ink=fg, closed=False):
         scaled = [point(x, y) for x, y in points]
@@ -1098,31 +1074,23 @@ def button_icon_surface(name, color, accent):
             pygame.draw.circle(icon, ink, (x, y), max(1, round(stroke * scale / 2)))
 
     if name in ("keyboard", "keyboard_hidden"):
-        pygame.draw.rect(
-            icon, fg, pygame.Rect(point(1.5, 3.5), (21 * scale, 16 * scale)),
-            max(1, round(scale * 1.5)), border_radius=round(3 * scale),
-        )
-        for row in range(3):
-            for col in range(4):
-                pygame.draw.rect(
-                    icon, fg,
-                    pygame.Rect(point(4 + col * 4.2, 6 + row * 3.8),
-                                (2.1 * scale, 1.8 * scale)),
-                    border_radius=round(0.7 * scale),
-                )
-        pygame.draw.line(icon, fg, point(8, 17), point(16, 17), round(1.5 * scale))
+        pygame.draw.rect(icon, fg, box(1.2, 4.4, 21.6, 15.2), border_radius=round(3.2 * scale))
+        for row, (count, x0) in enumerate(((5, 3.8), (4, 5.6))):
+            for col in range(count):
+                pygame.draw.rect(icon, clear, box(x0 + col * 3.6, 7.2 + row * 3.6, 2.4, 2.4),
+                                 border_radius=round(0.6 * scale))
+        pygame.draw.rect(icon, clear, box(7.2, 14.4, 9.6, 2.4), border_radius=round(0.6 * scale))
         if name == "keyboard_hidden":
-            line(((3, 21), (21, 3)), 2, detail)
-    elif name == "pin":
-        pygame.draw.circle(icon, fg, point(12, 5), round(2.4 * scale))
-        line(((12, 7.5), (12, 13), (12, 20)), 1.7)
-        line(((7, 9.5), (17, 9.5)), 1.7)
-        line(((9, 8), (9, 12), (15, 12), (15, 8)), 1.5)
+            pygame.draw.line(icon, clear, point(3, 21.5), point(21, 2.5), round(5 * scale))
+            line(((3, 21.5), (21, 2.5)), 2.2, detail)
     elif name == "home":
-        line(((2.5, 11), (12, 2.8), (21.5, 11)), 2.1, closed=False)
-        line(((5, 9.5), (5, 21), (19, 21), (19, 9.5)), 1.8)
-        pygame.draw.rect(icon, fg, pygame.Rect(point(10, 14), (4 * scale, 7 * scale)),
-                         max(1, round(scale * 1.2)), border_radius=round(scale))
+        pygame.draw.polygon(icon, fg, [point(12, 2.6), point(22.6, 11.8), point(19.8, 11.8), point(19.8, 21.2),
+                                       point(4.2, 21.2), point(4.2, 11.8), point(1.4, 11.8)])
+        pygame.draw.rect(icon, fg, box(16.6, 4.4, 2.8, 4.6), border_radius=round(0.5 * scale))
+        for wx in (6.2, 15.2):
+            pygame.draw.rect(icon, clear, box(wx, 13.6, 2.6, 2.6), border_radius=round(0.5 * scale))
+        pygame.draw.rect(icon, detail, box(9.6, 13.6, 4.8, 7.6),
+                         border_top_left_radius=round(2.4 * scale), border_top_right_radius=round(2.4 * scale))
     elif name == "play":
         pygame.draw.polygon(icon, fg, (point(5, 2.5), point(21, 12), point(5, 21.5)))
     elif name in ("speaker_on", "speaker_off"):
@@ -1139,12 +1107,12 @@ def button_icon_surface(name, color, accent):
         else:
             line(((15, 8), (21, 16)), 1.8, detail)
             line(((21, 8), (15, 16)), 1.8, detail)
-    return pygame.transform.smoothscale(icon, (24, 24))
+    return pygame.transform.smoothscale(icon, (ICON_PX, ICON_PX))
 
 def draw_button_icon(dst, name, center, color, hover=0.0, pressed=False, accent=C_WARN):
     icon = button_icon_surface(name, tuple(color), tuple(accent))
-    size = max(1, round(24 * (1.0 + 0.12 * hover)))
-    if size != 24:
+    size = max(1, round(ICON_PX * (1.0 + 0.12 * hover)))
+    if size != ICON_PX:
         icon = pygame.transform.smoothscale(icon, (size, size))
     x, y = center
     dst.blit(icon, icon.get_rect(center=(x, y + (2 if pressed else 0))))
@@ -1177,7 +1145,6 @@ def make_icon():
     return icon
 
 class UI:
-    """Fuentes, caché de texto con subíndices y superficies redondeadas."""
 
     SANS = "segoeui,helveticaneue,sfprodisplay,inter,arial,dejavusans,freesans"
     MONO = "consolas,menlo,dejavusansmono,couriernew,freemono"
@@ -1198,6 +1165,7 @@ class UI:
             "big": (self.SANS, 40, True), "score": (self.SANS, 84, True),
             "mono": (self.MONO, 14, False), "mono_s": (self.MONO, 13, False),
             "mono_b": (self.MONO, 14, True),
+            "mono_m": (self.MONO, 15, True), "data_l": (self.SANS, 17, True), "data_v": (self.MONO, 17, True),
         }
         for name, (family, size, bold) in spec.items():
             self.add(name, family, size, bold)
@@ -1482,7 +1450,7 @@ class Button:
         dst.blit(label, label.get_rect(center=(rect.centerx + shift, rect.centery)))
 
 def draw_arc(dst, color, center, radius, frac, width):
- 
+
     frac = clamp(frac, 0.0, 1.0)
     if frac <= 0.0:
         return
@@ -1492,15 +1460,15 @@ def draw_arc(dst, color, center, radius, frac, width):
     pygame.draw.lines(dst, color, False, pts, width)
 
 def draw_bulb(dst, center, glow, t, idle):
- 
+
     cx, cy = int(center[0]), int(center[1])
-    gy = cy - 5    
+    gy = cy - 5
     bg = (18, 26, 60)
     if glow > 0.02:
         rad = 6 * max(2, round((9 + 24 * glow) / 6))
         add_glow(dst, (cx, gy), rad, fade_color((255, 196, 70), glow * 0.85))
         pulse = 0.75 + 0.25 * math.sin(t * 9.0)
-        for i in range(8): 
+        for i in range(8):
             a = t * 0.9 + i * math.pi / 4
             r0, r1 = 14, 14 + 5 * glow * (pulse if i % 2 else 1.0)
             pygame.draw.line(dst, mix(bg, (255, 226, 130), glow * 0.9),
@@ -1514,22 +1482,21 @@ def draw_bulb(dst, center, glow, t, idle):
     pygame.draw.lines(dst, glass_edge, False, [neck[0], neck[3], neck[2], neck[1]], 2)
     aa_circle(dst, glass_edge, (cx, gy), 11)
     aa_circle(dst, glass_fill, (cx, gy), 9)
-    for k, w in enumerate((10, 10, 6)): 
+    for k, w in enumerate((10, 10, 6)):
         pygame.draw.rect(dst, base_col, (cx - w // 2, gy + 14 + k * 3, w, 2), border_radius=1)
-   
+
     heat = glow if glow > 0.02 else (0.22 * (0.5 + 0.5 * math.sin(t * 3.0)) if idle else 0.0)
     flick = 1.0 if glow < 0.3 else 0.92 + 0.08 * math.sin(t * 23.0)
     fil = mix((112, 124, 170), (255, 252, 226), clamp(heat * flick, 0.0, 1.0))
     wire = [(cx - 3, gy + 8), (cx - 3, gy + 1), (cx - 1.5, gy - 3), (cx, gy + 1), (cx + 1.5, gy - 3),
             (cx + 3, gy + 1), (cx + 3, gy + 8)]
     pygame.draw.lines(dst, fil, False, wire, 2)
-    if glow > 0.35: 
+    if glow > 0.35:
         for k in range(3):
             a = t * 5.0 + k * math.tau / 3
             aa_circle(dst, (255, 250, 228), (cx + math.cos(a) * 5.5, gy - 1 + math.sin(a) * 5.5), 1.5)
 
 class BulbButton:
-    """Botón de pistas"""
 
     SIZE = 52
 
@@ -1538,11 +1505,11 @@ class BulbButton:
         self.enabled = True
         self.hover = 0.0
         self.pressed = False
-        self.glow = 0.0 
-        self.lit_for = 0.0 
+        self.glow = 0.0
+        self.lit_for = 0.0
         self.ready = True
         self.exhausted = False
-        self.frac = 1.0  
+        self.frac = 1.0
 
     def ignite(self):
         self.lit_for = 3.4
@@ -1576,7 +1543,7 @@ class BulbButton:
         lit = self.glow
         fill = mix((20, 28, 64), (74, 54, 14), lit)
         fill = mix(fill, (34, 46, 100), self.hover * 0.6 * (1.0 - lit))
-        aa_circle(dst, (0, 0, 0), (cx, cy + 3), r) 
+        aa_circle(dst, (0, 0, 0), (cx, cy + 3), r)
         aa_circle(dst, (62, 78, 150) if not lit else (255, 196, 70), (cx, cy), r)
         aa_circle(dst, fill, (cx, cy), r - 2)
         track = r - 4
@@ -1599,7 +1566,7 @@ class Particle:
         self.color, self.gravity, self.glow = color, gravity, glow
 
 def camera_goal(p, bullet=None):
- 
+
     tx = p.side * p.dist
     top = p.height + BOARD_RADIUS + 16.0
     low = p.plateau - 10.0
@@ -1622,11 +1589,11 @@ def camera_goal(p, bullet=None):
         zf = zoom_for(xs, max(top, bullet[1] + 12.0))
         if zf >= 0.5 * zb:
             return place(xs, zf)
-        return place(base_xs, 0.5 * zb) 
+        return place(base_xs, 0.5 * zb)
     return place(base_xs, zb)
 
 class Camera:
- 
+
     def __init__(self):
         self.zoom, self.x0 = ZOOM_REF, 0.0
 
@@ -1639,7 +1606,7 @@ class Camera:
         self.x0 += (goal[1] - self.x0) * k
 
 class Backdrop:
- 
+
     LAYERS = (
         (0.05, 90, 190, (44, 36, 104), (158, 92, 140), True, 11),
         (0.11, 55, 125, (30, 26, 80), (104, 64, 126), True, 23),
@@ -1656,9 +1623,9 @@ class Backdrop:
         self.layers = [self._make_layer(*spec) for spec in self.LAYERS]
         self.stars = self._make_stars(size, horizon, seed)
         self.clouds = self._make_clouds(size, horizon, seed)
-        self.twinkle = None 
+        self.twinkle = None
         self.next_twinkle = None
-        self.meteor = None  
+        self.meteor = None
         self.next_meteor = None
 
     def _make_sky(self, size, horizon):
@@ -1682,7 +1649,7 @@ class Backdrop:
         for _ in range(int(w * h / 4200)):
             x, y = rng.uniform(0, w), rng.randrange(int(horizon * 0.78))
             if math.hypot(x - mx, y - my) < 48:
-                continue 
+                continue
             b = int(rng.randint(110, 255) * (1 - y / horizon) ** 0.6)
             stars.append((x, y, b, rng.random() < 0.12, rng.uniform(1.5, 4.5)))
         return stars
@@ -1696,7 +1663,7 @@ class Backdrop:
             tint = rng.choice(((150, 92, 170), (120, 90, 190), (196, 112, 150)))
             small = pygame.Surface((cw // 4, ch // 4), pygame.SRCALPHA)
             sw, sh = small.get_size()
-            for _ in range(7): 
+            for _ in range(7):
                 ew, eh = rng.randint(sw // 3, int(sw * 0.6)), rng.randint(max(3, sh // 3), max(4, int(sh * 0.7)))
                 pygame.draw.ellipse(small, (*tint, rng.randint(26, 46)),
                                     (rng.randint(0, sw - ew), rng.randint(0, sh - eh), ew, eh))
@@ -1721,7 +1688,7 @@ class Backdrop:
         return factor, surf.convert_alpha(), h_max
 
     def _schedule(self, t):
- 
+
         if self.next_twinkle is None:
             self.next_twinkle = t + self.rng.uniform(2.5, 5.0)
             self.next_meteor = t + self.rng.uniform(8.0, 18.0)
@@ -1747,7 +1714,7 @@ class Backdrop:
             dst.set_at((x, y), (b, b, min(255, b + 24)))
             if big:
                 pygame.draw.circle(dst, (b, b, 255), (x, y), 1)
-        if self.twinkle: 
+        if self.twinkle:
             i, t0, dur = self.twinkle
             x0, y, b, _big, speed = self.stars[i]
             x = (x0 - t * speed) % w
@@ -1793,7 +1760,6 @@ class Backdrop:
             dst.blit(layer, (self.tile_w - off, y))
 
 def draw_step_icon(dst, kind, center, color, t):
-    """Iconos vectoriales pequeños (≈ 30 px) para las tarjetas del tutorial."""
     cx, cy = int(center[0]), int(center[1])
     if kind == "target":
         for r, w in ((13, 2), (8, 2)):
@@ -1805,7 +1771,7 @@ def draw_step_icon(dst, kind, center, color, t):
     elif kind == "angle":
         ox, oy = cx - 12, cy + 10
         pygame.draw.line(dst, color, (ox, oy), (ox + 28, oy), 2)
-        a = math.radians(38 + 5 * math.sin(t * 1.6))  
+        a = math.radians(38 + 5 * math.sin(t * 1.6))
         pygame.draw.line(dst, color, (ox, oy), (ox + math.cos(a) * 26, oy - math.sin(a) * 26), 2)
         pts = [(ox + 13 * math.cos(a * i / 10), oy - 13 * math.sin(a * i / 10)) for i in range(11)]
         pygame.draw.lines(dst, C_AMBER, False, pts, 2)
@@ -1813,14 +1779,13 @@ def draw_step_icon(dst, kind, center, color, t):
         pygame.draw.line(dst, mix(color, (20, 26, 60), 0.55), (cx - 15, cy + 10), (cx + 15, cy + 10), 1)
         pts = [(cx + x, cy + 10 - 20 * (1 - (x / 14.0) ** 2)) for x in range(-14, 15, 2)]
         pygame.draw.lines(dst, color, False, pts, 2)
-        k = (t * 0.5) % 1.0  
+        k = (t * 0.5) % 1.0
         px = cx + 14 - 28 * ease_out_cubic(k)
         aa_circle(dst, C_AMBER, (px, cy + 10 - 20 * (1 - ((px - cx) / 14.0) ** 2)), 3)
-    else:  
+    else:
         draw_bulb(dst, (cx, cy + 3), 0.55 + 0.45 * math.sin(t * 2.2), t, True)
 
 def draw_bonus_icon(dst, kind, center, color, t):
-    """Icono animado y acotado al espacio reservado en cada tarjeta de bonificación."""
     cx, cy = int(center[0]), int(center[1])
     if kind == "doble":
         pulse = 1.0 + 0.10 * math.sin(t * 4.0)
@@ -2155,8 +2120,7 @@ class Game:
         self.fire_btn = Button((a.x + 254, a.y + 40, 126, 48), "Disparar", "fire")
         self.angle_keypad_rect = pygame.Rect(650, 254, 226, 248)
         self.angle_keypad_drag = None
-        self.angle_keypad_pinned = False
-        self.angle_keypad_visible = True
+        self.angle_keypad_visible = False
         keypad_keys = (
             ("1", "2", "3"),
             ("4", "5", "6"),
@@ -2179,7 +2143,6 @@ class Game:
             "fire",
             style="small_b",
         )
-        self.angle_keypad_pin_btn = Button((0, 0, 32, 24), "", "ghost", style="tiny_b")
         self.angle_keypad_visibility_btn = Button((0, 0, 42, 42), "", "ghost", style="small_b")
         self._layout_angle_keypad()
         self.bulb = BulbButton((a.x + 14, a.y + 98))
@@ -2259,7 +2222,7 @@ class Game:
         self.phase = AIM
         self.hints = 0
         self.hint_list = []
-        self.hint_ready_at = 0.0  
+        self.hint_ready_at = 0.0
         self.cells_prev, self.flash_t0 = frozenset(), -9.0
         self.time_left, self.freeze_t = TIME_MAX, 0.0
         self.time_flash, self.time_out = None, False
@@ -2269,8 +2232,8 @@ class Game:
         self.chip_rects = {}
         self.last_story = None
         self.last_tip = None
-        self.tip_fail = -1  
-        self.fails = 0 
+        self.tip_fail = -1
+        self.fails = 0
         self.solved = False
         self.drawer_open, self.drawer_t = False, 0.0
         self.message = None
@@ -2278,7 +2241,7 @@ class Game:
         self.recoil = self.flash = self.shake = self.hold = self.settle = self.auto_t = 0.0
         self.fire_cooldown = 0.0
         self.particles, self.rings, self.floaters, self.hit_marks = [], [], [], []
-        self.toast = None  
+        self.toast = None
         self.save_note = None
         self.saved_name = None
         self.round_index = 0
@@ -2298,7 +2261,6 @@ class Game:
         self.camera.snap(camera_goal(self.problem))
 
     def new_round(self):
-        """Genera una ecuación nueva (reinicia pistas e intentos fallidos)."""
         self.problem = make_problem(self.round_index, avoid=self.last_story)
         self.last_story = self.problem.title
         self.hint_list = build_hints(self.problem)
@@ -2320,7 +2282,6 @@ class Game:
         self.begin_attempt()
 
     def begin_attempt(self):
-        """Prepara un nuevo disparo SIN tocar la ecuación, las pistas ni el ángulo escrito."""
         self.shot = self.pending = None
         self.phase = AIM
         self.message = None
@@ -2328,7 +2289,6 @@ class Game:
         self.angle_input.focused = True
 
     def new_equation(self):
-        """Cambia el reto: botón «Nueva Ecuación» o reinicio automático tras dar al blanco."""
         if self.phase not in (AIM, SOLVED):
             return
         if self.round_index + 1 >= ROUNDS_PER_MATCH:
@@ -2338,7 +2298,6 @@ class Game:
             self.new_round()
 
     def end_match(self, time_out=False):
-        """Lleva a la tabla de resultados (al terminar las ecuaciones o al agotarse el tiempo)."""
         self.state = RESULT
         self.time_out = time_out
         self.result_input.set_text(self.menu_input.text)
@@ -2457,7 +2416,6 @@ class Game:
         self.hold = 1.3
 
     def time_penalty(self):
-        """Cada desacierto resta tiempo: 10 s, y +5 s por cada fallo seguido (se reinicia con cada ecuación)."""
         if self.freeze_t > 0.0:
             return
         pen = min(TIME_PENALTY_MAX, TIME_PENALTY_BASE + TIME_PENALTY_STEP * (self.fails - 1))
@@ -2465,8 +2423,6 @@ class Game:
         self.time_flash = {"text": f"-{pen:.0f} s", "age": 0.0}
 
     def maybe_spawn_balloons(self):
-        """Tras 3 o más fallos seguidos pueden aparecer globos con ayudas, TODOS del mismo tamaño y en
-        posiciones aleatorias. Viven en coordenadas del mundo: la bala los revienta al atravesarlos."""
         if self.fails < BALLOON_MIN_FAILS or self.fails - self.balloon_at < 2 or self.balloons:
             return
         if random.random() >= min(0.8, 0.5 + 0.1 * (self.fails - BALLOON_MIN_FAILS)):
@@ -2498,8 +2454,6 @@ class Game:
             self.mini_toast = {"age": 0.0, "life": 3.2}
 
     def check_balloon_hits(self):
-        """Revienta todo globo que la bala atraviese. Se revisa el TRAMO recorrido desde el último
-        cuadro (no solo la punta), así ninguno se escapa aunque la bala vaya rápida."""
         shot = self.shot
         if not shot:
             return
@@ -2559,7 +2513,6 @@ class Game:
                 self.mini_toast = None
 
     def maybe_tip(self, res):
-        """Tras varios fallos, de vez en cuando muestra un consejo táctico (poco si ya no quedan pistas)."""
         if self.fails < TIP_MIN_FAILS or self.tip_fail == self.fails - 1:
             return None
         exhausted = self.hints >= MAX_HINTS
@@ -2749,16 +2702,9 @@ class Game:
         elif self.phase == AIM:
             if self._handle_angle_keypad_drag(e):
                 return
-            pin_keypad = self.angle_keypad_pin_btn.handle(e)
             toggle_keypad = self.angle_keypad_visibility_btn.handle(e)
-            if pin_keypad:
-                self.angle_keypad_pinned = not self.angle_keypad_pinned
-                return
             if toggle_keypad:
                 self.angle_keypad_visible = not self.angle_keypad_visible
-                self.angle_keypad_rect.w = (
-                    226 if self.angle_keypad_visible else 72
-                )
                 self._move_angle_keypad(
                     self.angle_keypad_rect.x,
                     self.angle_keypad_rect.y,
@@ -2770,7 +2716,7 @@ class Game:
                 self.message = None
             keypad_action = None
             for key, button in self.angle_keypad.items():
-                if button.handle(e):
+                if self.angle_keypad_visible and button.handle(e):
                     keypad_action = key
             if keypad_action:
                 self.angle_input.focused = True
@@ -2851,7 +2797,7 @@ class Game:
             if self.time_flash["age"] > TIME_FLASH_SECONDS:
                 self.time_flash = None
         self.update_balloons(dt)
-        if self.time_left <= 0.0: 
+        if self.time_left <= 0.0:
             self.time_left = 0.0
             self.end_match(time_out=True)
             return
@@ -2864,7 +2810,6 @@ class Game:
         self.next_btn.enabled = self.phase == SOLVED
         for b in (self.fire_btn, self.new_btn, self.next_btn):
             b.update(dt, mouse)
-        self.angle_keypad_pin_btn.update(dt, mouse)
         self.angle_keypad_visibility_btn.update(dt, mouse)
         for button in self.angle_keypad.values():
             button.update(dt, mouse)
@@ -2876,7 +2821,7 @@ class Game:
         if self.phase == AIM:
             value = parse_angle(self.angle_input.text)
             if value is not None and 0.0 <= value <= MAX_ANGLE:
-                self.aim_deg = value 
+                self.aim_deg = value
         self.barrel_deg += (self.aim_deg - self.barrel_deg) * min(1.0, dt * 12.0)
         self.recoil = max(0.0, self.recoil - dt * 3.0)
         self.flash = max(0.0, self.flash - dt)
@@ -2897,7 +2842,7 @@ class Game:
             if self.phase == SETTLE:
                 self.settle -= dt
                 if self.settle <= 0:
-                    if self.solved: 
+                    if self.solved:
                         self.phase, self.auto_t = SOLVED, AUTO_NEXT_SECONDS
                     else:
                         self.begin_attempt()
@@ -2938,7 +2883,7 @@ class Game:
             return [self.next_btn, self.new_btn, self.music_btn, self.home_btn]
         buttons = [self.fire_btn, self.bulb, self.new_btn, self.music_btn, self.home_btn]
         if self.phase == AIM:
-            buttons.extend((self.angle_keypad_pin_btn, self.angle_keypad_visibility_btn))
+            buttons.append(self.angle_keypad_visibility_btn)
             if self.angle_keypad_visible:
                 buttons.extend(self.angle_keypad.values())
         return buttons
@@ -2953,10 +2898,6 @@ class Game:
             for col, key in enumerate(keys):
                 self.angle_keypad[key].rect.topleft = (x + 26 + col * 60, y + 34 + row * 42)
         self.angle_keypad["ENTER"].rect.topleft = (x + 26, y + 202)
-        pin_x = x + (self.angle_keypad_rect.w - self.angle_keypad_pin_btn.rect.w) // 2
-        if self.angle_keypad_visible:
-            pin_x = x + self.angle_keypad_rect.w - self.angle_keypad_pin_btn.rect.w - 5
-        self.angle_keypad_pin_btn.rect.topleft = (pin_x, y + 5)
 
     def _keypad_finger_pos(self, event):
         surface = self.output_surface or pygame.display.get_surface()
@@ -3015,10 +2956,8 @@ class Game:
 
     def _move_angle_keypad(self, x, y):
         rect = self.angle_keypad_rect
-        height = rect.h if self.angle_keypad_visible else 34
-        width = rect.w
-        rect.x = clamp(x, 0, WIDTH - width)
-        rect.y = clamp(y, 0, HEIGHT - height)
+        rect.x = clamp(x, 0, WIDTH - rect.w)
+        rect.y = clamp(y, 0, HEIGHT - rect.h)
         self._layout_angle_keypad()
 
     def _handle_angle_keypad_drag(self, event):
@@ -3051,7 +2990,7 @@ class Game:
         else:
             return False
 
-        if self.angle_keypad_pinned:
+        if not self.angle_keypad_visible:
             return False
         header = pygame.Rect(
             self.angle_keypad_rect.x,
@@ -3059,9 +2998,7 @@ class Game:
             self.angle_keypad_rect.w,
             30,
         )
-        if pointer is not None and (
-                self.angle_keypad_pin_btn.rect.collidepoint(pointer)
-                or self.angle_keypad_visibility_btn.rect.collidepoint(pointer)):
+        if pointer is not None and self.angle_keypad_visibility_btn.rect.collidepoint(pointer):
             return False
         if pointer is not None and header.collidepoint(pointer):
             self.angle_keypad_drag = (
@@ -3076,10 +3013,9 @@ class Game:
     def update_cursor(self, mouse):
         cursor = pygame.SYSTEM_CURSOR_ARROW
         keypad_header = pygame.Rect(
-            self.angle_keypad_rect.x, self.angle_keypad_rect.y,
-            self.angle_keypad_rect.w, 34 if not self.angle_keypad_visible else 30,
+            self.angle_keypad_rect.x, self.angle_keypad_rect.y, self.angle_keypad_rect.w, 30,
         )
-        if (self.state == PLAY and self.phase == AIM and not self.angle_keypad_pinned
+        if (self.state == PLAY and self.phase == AIM and self.angle_keypad_visible
                 and keypad_header.collidepoint(mouse)
                 or any(b.enabled and b.rect.collidepoint(mouse) for b in self.active_buttons())):
             cursor = pygame.SYSTEM_CURSOR_HAND
@@ -3119,32 +3055,23 @@ class Game:
             self.draw_angle_keypad(s)
 
     def draw_angle_keypad(self, s):
-        rect = self.angle_keypad_rect
-        panel_size = rect.size if self.angle_keypad_visible else (rect.w, 34)
-        s.blit(
-            self.ui.rounded(panel_size, 14, (9, 15, 36, 248), (65, 92, 170), 1),
-            rect.topleft,
-        )
-        if self.angle_keypad_visible:
-            self.ui.text(s, "TECLADO", "tiny_b", C_MUTED, (rect.x + 12, rect.y + 9))
-            pygame.draw.line(
-                s, (60, 74, 140), (rect.x + 12, rect.y + 27),
-                (rect.right - 12, rect.y + 27), 1,
-            )
-        self.angle_keypad_pin_btn.draw(self.ui, s)
-        self._draw_keypad_pin_icon(s)
         if not self.angle_keypad_visible:
             return
+        rect = self.angle_keypad_rect
+        s.blit(
+            self.ui.rounded(rect.size, 14, (9, 15, 36, 248), (65, 92, 170), 1),
+            rect.topleft,
+        )
+        self.ui.text(s, "TECLADO", "tiny_b", C_MUTED, (rect.x + 12, rect.y + 9))
+        for gx in range(3):
+            for gy in range(2):
+                pygame.draw.circle(s, (92, 112, 190), (rect.right - 18 - gx * 6, rect.y + 11 + gy * 6), 1)
+        pygame.draw.line(
+            s, (60, 74, 140), (rect.x + 12, rect.y + 27),
+            (rect.right - 12, rect.y + 27), 1,
+        )
         for button in self.angle_keypad.values():
             button.draw(self.ui, s)
-
-    def _draw_keypad_pin_icon(self, dst):
-        cx, cy = self.angle_keypad_pin_btn.rect.center
-        color = C_ACCENT if self.angle_keypad_pinned else C_MUTED
-        draw_button_icon(
-            dst, "pin", (cx, cy), color, self.angle_keypad_pin_btn.hover,
-            self.angle_keypad_pin_btn.pressed,
-        )
 
     def chip(self, dst, right, y, label, value, color):
         ui = self.ui
@@ -3175,7 +3102,6 @@ class Game:
             x = self.chip(s, x, 14, label, value, color)
 
     def draw_time_flash(self, s):
-        """Descuento de tiempo («-10 s»). Se dibuja AL FINAL para quedar ENCIMA de la tarjeta de la misión."""
         f = self.time_flash
         rect = self.chip_rects.get("TIEMPO")
         if not f or rect is None:
@@ -3326,7 +3252,6 @@ class Game:
             pygame.draw.polygon(surf, (255, 236, 176), star)
 
     def draw_balloons(self, surf):
-        """Globos de ayuda (la bala los revienta), su animación de explosión y los textos de premio."""
         ui, t = self.ui, self.clock_t
         for b in self.balloons:
             if b["life"] - b["age"] < 2.5 and int(b["age"] * 6) % 2 == 0:
@@ -3409,10 +3334,10 @@ class Game:
         chips = [("v_{0}", f"{p.speed:.0f} m/s"), ("D", f"{p.dist:.0f} m"),
                  ("g", f"{GRAVITY} m/s²"), ("h", "0 m" if p.height == 0 else f"{p.height:+.0f} m")]
         for i, (label, value) in enumerate(chips):
-            rect = pygame.Rect(r.x + 16 + (i % 2) * 186, r.y + 92 + (i // 2) * 38, 178, 32)
+            rect = pygame.Rect(r.x + 16 + (i % 2) * 186, r.y + 92 + (i // 2) * 38, 178, 34)
             s.blit(ui.rounded(rect.size, 10, (22, 30, 68, 255), (60, 74, 146), 1), rect.topleft)
-            ui.text(s, label, "body_b", C_MUTED, (rect.x + 12, rect.centery), "midleft")
-            ui.text(s, value, "mono_b", C_TEXT, (rect.right - 12, rect.centery), "midright")
+            ui.text(s, label, "data_l", C_MUTED, (rect.x + 12, rect.centery), "midleft")
+            ui.text(s, value, "data_v", C_TEXT, (rect.right - 12, rect.centery), "midright")
 
     def draw_answer_card(self, s):
         ui, r = self.ui, ANSWER_RECT
@@ -3438,7 +3363,6 @@ class Game:
         self.new_btn.draw(ui, s)
 
     def draw_hint_drawer(self, s):
-        """Panel desplegable con la última pista: fondo crema y texto oscuro (alto contraste)."""
         k = ease_out_cubic(self.drawer_t)
         if k < 0.02 or not 0 < self.hints <= len(self.hint_list):
             return
@@ -3470,8 +3394,8 @@ class Game:
         c = p.c
         sg = "-" if p.side < 0 else ""
         tail = "" if p.height == 0 else f" {'-' if p.height > 0 else '+'} {abs(p.height):.0f}"
-        ui.text(s, f"f(X) = {sg}{p.dist:.0f}·tan X - {c:.2f}·sec²X{tail}", "mono_s", C_TEXT, (r.x + 18, r.y + 90))
-        ui.text(s, f"f'(X) = sec²X·({sg}{p.dist:.0f} - {2 * c:.2f}·tan X)", "mono_s", C_TEXT, (r.x + 18, r.y + 108))
+        ui.text(s, f"f(X) = {sg}{p.dist:.0f}·tan X - {c:.2f}·sec²X{tail}", "mono_m", C_TEXT, (r.x + 18, r.y + 85))
+        ui.text(s, f"f'(X) = sec²X·({sg}{p.dist:.0f} - {2 * c:.2f}·tan X)", "mono_m", C_TEXT, (r.x + 18, r.y + 105))
         shown = cells_revealed(self.hints, p.ans_row)
         seed = f"{fmt_deg(p.seed_deg)}°" if p.ans_row == 2 or 0 in shown else "?"
         ui.text(s, f"Semilla X_{{0}} = {seed} · respuesta: X que ya no cambia", "tiny", C_MUTED,
@@ -3567,7 +3491,6 @@ class Game:
         return phrase
 
     def draw_status(self, s):
-        """Aviso breve de ayuda generada y etiquetas de los power-ups activos."""
         ui = self.ui
         mt = self.mini_toast
         if mt:
@@ -3586,7 +3509,6 @@ class Game:
             ui.pill(s, f"TIEMPO CONGELADO {math.ceil(self.freeze_t)} s", C_ACCENT, FIELD.right - 16, y)
 
     def draw_toast(self, s):
-        """Frase de resultado: aparece con un pequeño salto y se desvanece sola en pocos segundos."""
         t = self.toast
         if not t:
             return
@@ -3604,7 +3526,6 @@ class Game:
         s.set_clip(None)
 
     def draw_next_button(self, s):
-        """Tras dar al blanco: botón «Nueva Ecuación» con cuenta atrás de 7 s (luego se inicia sola)."""
         if self.phase != SOLVED:
             return
         ui = self.ui
@@ -3657,7 +3578,6 @@ class Game:
                 ui.text(dst, values[head], "mono_b", color, (x, cy), "midright")
 
     def draw_wide_backdrop(self):
-        """Cielo y montañas a pantalla completa (también detrás de los bordes del lienzo)."""
         d = self.display
         self.menu_bd.draw(d, self.scroll, 0, self.clock_t, self.graphics_quality)
         d.blit(self.menu_ground, (0, self.oy + HEIGHT - self.menu_ground.get_height()))
@@ -3813,7 +3733,6 @@ class Game:
         ui.text(s, "Pulsa Esc para volver al inicio.", "tiny", C_MUTED, (rect.x + 24, 630))
 
     def draw_tutorial(self, s):
-        """Resume disparos, puntuación, pistas, penalizaciones y efectos de globos."""
         ui, r, t = self.ui, MENU_TUTORIAL, self.clock_t
         ui.card(s, r, accent=C_ACCENT)
         ui.text(s, "CÓMO JUGAR", "h2", C_TEXT, (r.x + 24, r.y + 26))
@@ -3982,7 +3901,7 @@ class Game:
 
     def _draw_keypad_visibility_icon(self):
         rect = self.angle_keypad_visibility_btn.rect
-        color = C_TEXT if self.angle_keypad_visible else C_MUTED
+        color = C_DARK if self.angle_keypad_visible else C_TEXT
         draw_button_icon(
             self.screen,
             "keyboard" if self.angle_keypad_visible else "keyboard_hidden",
