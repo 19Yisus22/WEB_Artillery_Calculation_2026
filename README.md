@@ -235,8 +235,8 @@ El menú principal muestra el **Top 4** por promedio de puntos. Sus pestañas pe
 
 <br/>
 
-- Banda sonora electrónica suave **sintetizada localmente**, con variaciones aleatorias de tempo, armonía y melodía.
-- En navegadores comienza tras la primera interacción, por las restricciones de reproducción automática.
+- Banda sonora electrónica suave **sintetizada localmente**, con variaciones aleatorias de tempo, armonía y melodía, sin archivos de audio.
+- En navegadores comienza tras la primera interacción y la genera el propio navegador con **WebAudio**: no consume CPU de Python, se pausa al cambiar de pestaña y mantiene el equipo fresco.
 - El altavoz muestra ondas cuando suena y una marca de silencio cuando está apagado; la preferencia se guarda en el dispositivo.
 - Los efectos de impacto suenan justo cuando termina la trayectoria y tienen un tono distinto para diana, blanco tocado, casi acierto y fallo lejano.
 
@@ -301,7 +301,8 @@ Importa el repositorio en Vercel y conserva la configuración de `vercel.json`. 
 ## 🛠️ Hecho con
 
 - **Pygame y Pygbag/WebAssembly** para ejecutar el juego dentro del navegador.
-- **Bucle asíncrono** sincronizado con el navegador para mantener la interfaz fluida.
+- **Bucle asíncrono** limitado a 60 FPS, con un regulador automático que baja o sube los efectos para no caer de 30 FPS en ninguna calidad gráfica.
+- **Escalado de un solo paso** al tamaño de la pantalla, con suavizado para conservar nítidos textos, números y símbolos.
 - **Vercel estático** para publicar los archivos compilados.
 - **Newton-Raphson** para las iteraciones de la tabla.
 - **Escalado adaptable** al tamaño de la ventana y a la densidad de píxeles.

@@ -106,7 +106,58 @@ GRAPHICS_PROFILES = {
         "layers": 3, "stars_step": 1, "clouds": 5, "fps": (60, 60),
     },
 }
+GRAPHICS_PROFILES["minimo"] = {
+    "particles": 0.10, "max_particles": 30, "glow": False,
+    "layers": 1, "stars_step": 4, "clouds": 0, "fps": (60, 30),
+}
 GRAPHICS_QUALITY = ("bajo", "medio", "alto")
+QUALITY_ORDER = ("alto", "medio", "bajo", "minimo")
+TARGET_FPS = 60
+
+class PerfGovernor:
+    def __init__(self):
+        self.tier = 0
+        self.avg = 1.0 / TARGET_FPS
+        self.warmup = 3.0
+        self.slow = 0.0
+        self.fast = 0.0
+        self.up_wait = 10.0
+        self.since_up = 999.0
+
+    def update(self, dt):
+        if dt > 0.25:
+            return
+        self.since_up += dt
+        if self.warmup > 0.0:
+            self.warmup -= dt
+            return
+        self.avg += (dt - self.avg) * 0.12
+        if self.avg > 1.0 / 50.0:
+            self.slow += dt
+            self.fast = 0.0
+        elif self.avg < 1.0 / 57.0:
+            self.fast += dt
+            self.slow = 0.0
+        else:
+            self.slow = self.fast = 0.0
+        if self.slow > 1.2 and self.tier < 3:
+            if self.since_up < 20.0:
+                self.up_wait = min(60.0, self.up_wait * 2.0)
+            self.tier += 1
+            self._reset(1.0)
+        elif self.fast > self.up_wait and self.tier > 0:
+            self.tier -= 1
+            self.since_up = 0.0
+            self._reset(1.0)
+
+    def _reset(self, warmup):
+        self.avg = 1.0 / TARGET_FPS
+        self.slow = self.fast = 0.0
+        self.warmup = warmup
+
+    @property
+    def fast_scale(self):
+        return self.tier >= 2
 
 MENU, PLAY, RESULT = "menu", "play", "result"
 AIM, FLIGHT, SETTLE, SOLVED = "aim", "flight", "settle", "solved"
@@ -754,6 +805,157 @@ class GameSettings:
         return True
 
 
+WEB_AUDIO_JS = r"""
+(function () {
+  if (window.artilleryMusic) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const CH = [[48, 55, 59, 64], [45, 52, 55, 59], [41, 48, 52, 57], [43, 50, 54, 57], [38, 45, 48, 53], [40, 47, 50, 55]];
+  const PR = [[0, 1, 4, 3], [4, 3, 0, 1], [0, 3, 4, 1], [1, 4, 3, 0], [0, 5, 4, 3], [4, 1, 0, 3]];
+  const PAD = [0.075, 0.055, 0.04, 0.03];
+  const freq = (n) => 440 * Math.pow(2, (n - 69) / 12);
+  const M = { supported: !!AC, on: false, ctx: null, music: null, fx: null, timer: 0, t: 0, bar: 4, plan: null };
+
+  function ensure() {
+    if (!M.supported) return false;
+    if (!M.ctx) {
+      M.ctx = new AC({ latencyHint: "playback" });
+      M.music = M.ctx.createGain();
+      M.music.gain.value = 0.13;
+      M.music.connect(M.ctx.destination);
+      M.fx = M.ctx.createGain();
+      M.fx.gain.value = 0.45;
+      M.fx.connect(M.ctx.destination);
+    }
+    return true;
+  }
+
+  function wake() {
+    if (M.ctx && M.ctx.state === "suspended" && !document.hidden) M.ctx.resume().catch(function () {});
+  }
+
+  function pad(dest, f, t0, dur, peak) {
+    const o = M.ctx.createOscillator(), g = M.ctx.createGain();
+    o.frequency.value = f;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(peak, t0 + 0.5);
+    g.gain.setValueAtTime(peak, t0 + dur - 0.5);
+    g.gain.linearRampToValueAtTime(0, t0 + dur);
+    o.connect(g).connect(dest);
+    o.start(t0);
+    o.stop(t0 + dur + 0.05);
+  }
+
+  function pluck(dest, f, t0, dur, peak, rate) {
+    const o = M.ctx.createOscillator(), g = M.ctx.createGain();
+    o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(peak, t0 + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + Math.min(dur, 5 / rate));
+    o.connect(g).connect(dest);
+    o.start(t0);
+    o.stop(t0 + dur);
+  }
+
+  function sweep(f0, f1, t0, dur, peak) {
+    const o = M.ctx.createOscillator(), g = M.ctx.createGain();
+    o.frequency.setValueAtTime(f0, t0);
+    o.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
+    g.gain.setValueAtTime(peak, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g).connect(M.fx);
+    o.start(t0);
+    o.stop(t0 + dur + 0.02);
+  }
+
+  function scheduleBar(t0) {
+    if (!M.plan || M.bar >= 4) {
+      M.plan = { prog: PR[Math.floor(Math.random() * PR.length)], beat: 60 / [78, 82, 86, 90][Math.floor(Math.random() * 4)] };
+      M.bar = 0;
+    }
+    const chord = CH[M.plan.prog[M.bar]], beat = M.plan.beat, bar = beat * 4, step = beat / 2;
+    chord.forEach(function (n, i) { pad(M.music, freq(n), t0, bar + 0.5, PAD[i]); });
+    for (let b = 0; b < 4; b++) {
+      pluck(M.music, freq(chord[0]) * (b % 2 ? 1.5 : 1), t0 + b * beat, beat * 1.2, 0.045, 5);
+    }
+    for (let s = 0; s < 8; s++) {
+      const n = chord[Math.floor(Math.random() * 4)] + (Math.random() < 0.5 ? 0 : 12);
+      pluck(M.music, freq(n), t0 + s * step, step * 1.5, 0.075, 6);
+    }
+    M.bar += 1;
+    M.t = t0 + bar;
+  }
+
+  function tick() {
+    if (!M.on || !M.ctx || M.ctx.state !== "running") return;
+    const now = M.ctx.currentTime;
+    if (M.t < now) M.t = now + 0.05;
+    while (M.t < now + 1.0) scheduleBar(M.t);
+  }
+
+  M.set = function (on) {
+    M.on = !!on;
+    if (M.on) {
+      if (!ensure()) return;
+      M.music.gain.cancelScheduledValues(0);
+      M.music.gain.setValueAtTime(0.13, M.ctx.currentTime);
+      M.t = 0;
+      if (!M.timer) M.timer = setInterval(tick, 250);
+      wake();
+    } else {
+      if (M.timer) clearInterval(M.timer);
+      M.timer = 0;
+      if (M.ctx) M.music.gain.setTargetAtTime(0, M.ctx.currentTime, 0.04);
+    }
+  };
+
+  M.hit = function (kind) {
+    if (!ensure()) return;
+    wake();
+    if (M.ctx.state !== "running") return;
+    const t = M.ctx.currentTime + 0.01;
+    if (kind === "diana") { pluckFx(660, t, 0.19); pluckFx(880, t + 0.15, 0.19); }
+    else if (kind === "acierto") { pluckFx(494, t, 0.15); pluckFx(659, t + 0.12, 0.15); }
+    else if (kind === "cerca") sweep(590, 250, t, 0.25, 0.25);
+    else sweep(145, 75, t, 0.22, 0.38);
+  };
+
+  function pluckFx(f, t0, dur) {
+    const o = M.ctx.createOscillator(), g = M.ctx.createGain();
+    o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(0.28, t0 + 0.012);
+    g.gain.setValueAtTime(0.28, t0 + dur - 0.055);
+    g.gain.linearRampToValueAtTime(0, t0 + dur);
+    o.connect(g).connect(M.fx);
+    o.start(t0);
+    o.stop(t0 + dur + 0.02);
+  }
+
+  ["pointerdown", "keydown", "touchend", "click"].forEach(function (name) {
+    window.addEventListener(name, function () { if (ensure()) wake(); }, { passive: true });
+  });
+  document.addEventListener("visibilitychange", function () {
+    if (!M.ctx) return;
+    if (document.hidden) M.ctx.suspend().catch(function () {});
+    else wake();
+  });
+  window.artilleryMusic = M;
+})();
+"""
+
+_web_audio_cache = []
+
+def web_audio():
+    if not _web_audio_cache:
+        try:
+            import platform
+            platform.window.eval(WEB_AUDIO_JS)
+            audio = platform.window.artilleryMusic
+            _web_audio_cache.append(audio if audio.supported else None)
+        except Exception:
+            _web_audio_cache.append(None)
+    return _web_audio_cache[0]
+
 class BackgroundMusic:
     SAMPLE_RATE = 22050
     CHORDS = (
@@ -780,6 +982,7 @@ class BackgroundMusic:
         self.sound = None
         self.channel = None
         self.preparing = False
+        self.web_on = False
         self.lock = threading.Lock()
 
     @staticmethod
@@ -890,7 +1093,22 @@ class BackgroundMusic:
         with self.lock:
             self.sound = self.channel = None
 
+    def _web_play(self):
+        if not self.enabled or not self.available:
+            return
+        audio = web_audio()
+        if audio is None:
+            self.available = False
+            self.error = "WebAudio no disponible"
+            return
+        if not self.web_on:
+            audio.set(True)
+            self.web_on = True
+
     def prepare_for_web(self):
+        if sys.platform == "emscripten":
+            self._web_play()
+            return
         with self.lock:
             if not self.enabled or not self.available or self.preparing:
                 return
@@ -941,6 +1159,11 @@ class BackgroundMusic:
             self._record_error(exc)
 
     def stop(self):
+        if self.web_on:
+            audio = web_audio()
+            if audio is not None:
+                audio.set(False)
+            self.web_on = False
         with self.lock:
             if self.channel is not None:
                 self.channel.stop()
@@ -993,6 +1216,9 @@ class ImpactSounds:
         return pygame.mixer.Sound(buffer=samples.tobytes())
 
     def prepare(self):
+        if sys.platform == "emscripten":
+            self.available = self.available and web_audio() is not None
+            return
         if not self.available or self.sounds:
             return
         try:
@@ -1015,6 +1241,9 @@ class ImpactSounds:
             raise ValueError(f"Categoría de sonido desconocida: {category}")
         self.prepare()
         if not self.available:
+            return
+        if sys.platform == "emscripten":
+            web_audio().hit(category)
             return
         try:
             channel = self.sounds[category].play()
@@ -1747,7 +1976,7 @@ class Backdrop:
     def draw(self, dst, cam_x, cam_y, t=0.0, quality="alto"):
         profile = GRAPHICS_PROFILES[quality]
         dst.blit(self.sky, (0, 0))
-        if quality != "bajo":
+        if quality in ("medio", "alto"):
             self._schedule(t)
         self._draw_stars(dst, t, profile["stars_step"])
         self._draw_clouds(dst, t, profile["clouds"])
@@ -1858,6 +2087,8 @@ class Game:
         self.scroll = 0.0
         self.tutorial_scroll = 0.0
         self.tutorial_drag_start = None
+        self.perf = PerfGovernor()
+        self.web_scale_failed = False
         self.clock_t = 0.0
         self.camera = Camera()
         self.match = Match()
@@ -1865,6 +2096,11 @@ class Game:
         self._build_widgets()
         self._place_music_button()
         self._reset_round_state()
+
+    @property
+    def quality_now(self):
+        base = QUALITY_ORDER.index(self.graphics_quality) if self.graphics_quality in QUALITY_ORDER else 0
+        return QUALITY_ORDER[min(len(QUALITY_ORDER) - 1, base + self.perf.tier)]
 
     def _open_display(self):
         if sys.platform == "emscripten":
@@ -1912,25 +2148,25 @@ class Game:
             current.get_width() / WIDTH,
             current.get_height() / HEIGHT,
         )
+        target_size = (
+            max(1, round(WIDTH * self.web_scale)),
+            max(1, round(HEIGHT * self.web_scale)),
+        )
         self.web_offset = (
-            (current.get_width() - round(WIDTH * self.web_scale)) // 2,
-            (current.get_height() - round(HEIGHT * self.web_scale)) // 2,
+            (current.get_width() - target_size[0]) // 2,
+            (current.get_height() - target_size[1]) // 2,
         )
-        output_frame_size = (
-            round(WIDTH * self.web_scale),
-            round(HEIGHT * self.web_scale),
-        )
-        self.web_output_frame = pygame.Surface(output_frame_size).convert()
+        current.fill(C_BG)
+        self.web_target = current.subsurface(pygame.Rect(self.web_offset, target_size))
         render_scale = min(
             requested_size[0] / WIDTH,
             requested_size[1] / HEIGHT,
             1.0,
         )
-        frame_size = (
+        self.web_frame_size = (
             max(1, round(WIDTH * render_scale)),
             max(1, round(HEIGHT * render_scale)),
         )
-        self.web_frame = pygame.Surface(frame_size).convert()
 
     def _sync_web_resolution(self):
         if sys.platform != "emscripten":
@@ -1952,7 +2188,7 @@ class Game:
             max(1, round(WIDTH * render_scale)),
             max(1, round(HEIGHT * render_scale)),
         )
-        if current.get_size() != self.web_output_size or self.web_frame.get_size() != frame_size:
+        if current.get_size() != self.web_output_size or self.web_frame_size != frame_size:
             self._resize_web_output()
 
     def toggle_fullscreen(self):
@@ -2557,7 +2793,7 @@ class Game:
             self.save_note = ("No se pudo escribir en la carpeta save_prof", C_BAD)
 
     def burst(self, x, y, n, speed, life, size, colors, gravity=30.0, glow=False, spread=(0, 360)):
-        profile = GRAPHICS_PROFILES[self.graphics_quality]
+        profile = GRAPHICS_PROFILES[self.quality_now]
         count = min(profile["max_particles"], max(1, round(n * profile["particles"])))
         overflow = len(self.particles) + count - profile["max_particles"]
         if overflow > 0:
@@ -2763,7 +2999,7 @@ class Game:
         self._sync_web_resolution()
         self.sync_mobile_text_input()
         self.clock_t += dt
-        if self.graphics_quality != "bajo":
+        if self.quality_now in ("medio", "alto"):
             self.scroll += dt * 16
         mouse = self.mouse_pos()
         self._place_music_button()
@@ -3124,7 +3360,7 @@ class Game:
     def draw_field(self):
         surf = self.field_surf
         cam = self.camera
-        self.field_bd.draw(surf, cam.x0 * cam.zoom, 0, self.clock_t, self.graphics_quality)
+        self.field_bd.draw(surf, cam.x0 * cam.zoom, 0, self.clock_t, self.quality_now)
         self.draw_terrain(surf)
         self.draw_markers(surf)
         self.draw_target(surf)
@@ -3579,7 +3815,7 @@ class Game:
 
     def draw_wide_backdrop(self):
         d = self.display
-        self.menu_bd.draw(d, self.scroll, 0, self.clock_t, self.graphics_quality)
+        self.menu_bd.draw(d, self.scroll, 0, self.clock_t, self.quality_now)
         d.blit(self.menu_ground, (0, self.oy + HEIGHT - self.menu_ground.get_height()))
         if self.canvas[1] > self.oy + HEIGHT:
             d.fill((8, 11, 28), (0, self.oy + HEIGHT, self.canvas[0], self.canvas[1] - self.oy - HEIGHT))
@@ -3889,15 +4125,22 @@ class Game:
                     (self.music_btn.rect.centerx, self.music_btn.rect.bottom + 2), "midtop",
                 )
         if self.output_surface is not None:
-            pygame.transform.scale(self.display, self.web_frame.get_size(), self.web_frame)
-            pygame.transform.scale(
-                self.web_frame,
-                self.web_output_frame.get_size(),
-                self.web_output_frame,
-            )
-            self.output_surface.fill(C_BG)
-            self.output_surface.blit(self.web_output_frame, self.web_offset)
+            self._present_web()
         pygame.display.flip()
+
+    def _present_web(self):
+        target, source = self.web_target, self.display
+        if target.get_size() == source.get_size():
+            target.blit(source, (0, 0))
+            return
+        if self.perf.fast_scale or self.web_scale_failed:
+            pygame.transform.scale(source, target.get_size(), target)
+            return
+        try:
+            pygame.transform.smoothscale(source, target.get_size(), target)
+        except (ValueError, pygame.error):
+            self.web_scale_failed = True
+            pygame.transform.scale(source, target.get_size(), target)
 
     def _draw_keypad_visibility_icon(self):
         rect = self.angle_keypad_visibility_btn.rect
@@ -3919,7 +4162,8 @@ class Game:
         if sys.platform != "emscripten" and self.music.enabled:
             asyncio.get_running_loop().run_in_executor(None, self.music.prepare_and_start)
         while self.running:
-            raw = self.clock.tick() / 1000.0
+            raw = self.clock.tick(TARGET_FPS) / 1000.0
+            self.perf.update(raw)
             for event in pygame.event.get():
                 self.handle_event(event)
             self.update(min(raw, 0.05), raw)
